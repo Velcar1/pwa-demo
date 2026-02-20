@@ -1,5 +1,5 @@
 // Configuration
-const REDIRECT_URL = 'https://www.google.com'; // Change this to your target URL
+const REDIRECT_URL = 'https://d107qu3rkmrqtq.cloudfront.net/?device=taipei_row&sku=default&carrier=default&json=device.json';
 
 const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
