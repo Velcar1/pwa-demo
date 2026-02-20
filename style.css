@@ -13,7 +13,8 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-body, html {
+body,
+html {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -46,6 +47,27 @@ body, html {
   z-index: 10;
   cursor: pointer;
   background: transparent;
+}
+
+#contentFrame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  z-index: 5;
+  display: none;
+  /* Hidden initially */
+}
+
+/* Helper classes */
+.hidden {
+  display: none !important;
+}
+
+.visible {
+  display: block !important;
 }
 
 /* Hide scrollbars just in case */

@@ -3,10 +3,19 @@ const REDIRECT_URL = 'https://d107qu3rkmrqtq.cloudfront.net/?device=taipei_row&s
 
 const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
+const iframe = document.getElementById('contentFrame');
+const overlay = document.getElementById('interactionOverlay');
 
 const handleInteraction = () => {
-    console.log('Interaction detected, redirecting...');
-    window.location.href = REDIRECT_URL;
+    console.log('Interaction detected, loading frame...');
+
+    // Set source and show iframe
+    iframe.src = REDIRECT_URL;
+    iframe.classList.add('visible');
+
+    // Hide video and overlay
+    video.classList.add('hidden');
+    overlay.classList.add('hidden');
 };
 
 // Add listeners for touch and click
