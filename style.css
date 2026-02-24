@@ -103,3 +103,100 @@ html {
 ::-webkit-scrollbar {
   display: none;
 }
+
+/* Pantalla de Vinculación (Pairing Overlay) */
+#pairingOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 90;
+  /* Debajo de loadingOverlay */
+  font-family: 'Montserrat', system-ui, sans-serif;
+}
+
+.pairing-card {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 3rem;
+  border-radius: 24px;
+  text-align: center;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.brand-logo {
+  height: 40px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 8px 16px;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.pairing-card h1 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.pairing-card p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.code-display {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  font-size: 3.5rem;
+  font-weight: 800;
+  color: #F19001;
+  letter-spacing: 0.2em;
+  font-family: monospace;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.waiting-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 1rem;
+  background: rgba(0, 88, 151, 0.2);
+  padding: 10px 20px;
+  border-radius: 30px;
+  border: 1px solid rgba(0, 88, 151, 0.4);
+}
+
+.waiting-indicator p {
+  color: #60a5fa;
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(96, 165, 250, 0.2);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}

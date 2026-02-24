@@ -16,6 +16,22 @@
         <div id="loadingOverlay">
             <div class="spinner"></div>
         </div>
+
+        <!-- PANTALLA DE VINCULACIÓN -->
+        <div id="pairingOverlay" class="hidden">
+            <div class="pairing-card">
+                <img src="https://gtf-sap-repo.s3.us-east-1.amazonaws.com/images/l1nx/logo2-L1NX-azulnaranja%2B(2).png"
+                    alt="LINX Logo" class="brand-logo">
+                <h1>Vincular Dispositivo</h1>
+                <p>Ingresa este código en tu panel de control para enlazar esta pantalla.</p>
+                <div class="code-display" id="pairingCodeDisplay">------</div>
+                <div class="waiting-indicator">
+                    <div class="spinner-small"></div>
+                    <p>Esperando autorización...</p>
+                </div>
+            </div>
+        </div>
+
         <video id="idleVideo" muted loop playsinline preload="auto" class="hidden">
             <source src="/video.mp4" type="video/mp4">
             Tu navegador no soporta el elemento de video.
