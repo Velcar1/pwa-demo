@@ -13,7 +13,10 @@
 
 <body>
     <div id="app">
-        <video id="idleVideo" autoplay muted loop playsinline preload="auto">
+        <div id="loadingOverlay">
+            <div class="spinner"></div>
+        </div>
+        <video id="idleVideo" muted loop playsinline preload="auto" class="hidden">
             <source src="/video.mp4" type="video/mp4">
             Tu navegador no soporta el elemento de video.
         </video>

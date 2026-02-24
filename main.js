@@ -11,6 +11,7 @@ const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
 const iframe = document.getElementById('contentFrame');
 const overlay = document.getElementById('interactionOverlay');
+const loadingOverlay = document.getElementById('loadingOverlay');
 
 async function fetchConfig() {
     try {
@@ -70,7 +71,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     await fetchConfig();
 
     // 2. Play video
-    video.play().catch(error => {
-        console.warn('Auto-play was prevented. Waiting for first interaction to play if needed.', error);
-    });
+    try {
+        await video.play();
+        // 3. Hide loading only after video playback starts successfully
+        video.classList.remove('hidden');
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => {
+            loadingOverlay.classList.add('hidden');
+        }, 500);
+    } catch (error) {
+        console.warn('Auto-play was prevented or failed. Waiting for first interaction to play if needed.', error);
+        // Still hide loading so user can interact to play
+        video.classList.remove('hidden');
+        loadingOverlay.classList.add('hidden');
+    }
 });
