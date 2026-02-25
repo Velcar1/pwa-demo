@@ -6,6 +6,7 @@ let REDIRECT_URL = 'https://d107qu3rkmrqtq.cloudfront.net/?device=taipei_row&sku
 let VIDEO_URL = '/video.mp4';
 
 const pb = new PocketBase(PB_URL);
+pb.autoCancellation(false);
 
 // DOM Elements
 const app = document.getElementById('app');
@@ -125,33 +126,45 @@ async function checkDevicePairing() {
     if (!deviceId) {
         // --- PROCESO DE VINCULACIÓN NUEVA ---
         const code = generatePairingCode();
+        console.log("Generando nuevo código de vinculación:", code);
 
         try {
             // Crear el registro en PocketBase
             const record = await pb.collection('devices').create({
                 pairing_code: code,
                 is_registered: false
-                // name is opcional
             });
 
-            // Guardar el ID del registro temporalmente en memoria, 
-            // no en localStorage hasta que esté autorizado
             deviceId = record.id;
+            console.log("Registro creado en PocketBase con ID:", deviceId);
 
             // Mostrar el código en pantalla al usuario
             showPairingScreen(code);
 
-            // Suscribirse en tiempo real para saber cuándo nos autorizan en el Dashboard
+            // 1. Suscribirse en tiempo real (SSE)
             pb.collection('devices').subscribe(deviceId, (e) => {
+                console.log("Evento recibido vía Realtime:", e.action);
                 if (e.record.is_registered) {
-                    localStorage.setItem('pwa_device_id', deviceId);
-                    pb.collection('devices').unsubscribe(deviceId); // ya no necesitamos escuchar esto especificamente
-                    startContent(e.record); // Iniciar la PWA
-
-                    // Suscribirse a los cambios globales del dispositivo para desvincular
-                    subscribeToDeviceChanges(deviceId);
+                    finalizePairing(deviceId, e.record);
                 }
             });
+
+            // 2. FALLBACK: Polling (Consultar cada 5 segundos por si falla Realtime)
+            const pollingInterval = setInterval(async () => {
+                try {
+                    console.log("Verificando estado vía Polling...");
+                    const checkRecord = await pb.collection('devices').getOne(deviceId);
+                    if (checkRecord.is_registered) {
+                        clearInterval(pollingInterval);
+                        finalizePairing(deviceId, checkRecord);
+                    }
+                } catch (err) {
+                    // Si el registro ya fue borrado o hay error, paramos polling
+                    if (err.status === 404) clearInterval(pollingInterval);
+                    console.warn("Error en polling:", err);
+                }
+            }, 5000);
+
         } catch (err) {
             console.error("Error al crear registro de dispositivo:", err);
             // Mostrar mensaje de error en la UI de ser posible
@@ -179,6 +192,20 @@ async function checkDevicePairing() {
         localStorage.removeItem('pwa_device_id');
         checkDevicePairing();
     }
+}
+
+function finalizePairing(deviceId, record) {
+    if (localStorage.getItem('pwa_device_id')) return; // Ya finalizado
+
+    console.log("¡Vinculación confirmada!");
+    localStorage.setItem('pwa_device_id', deviceId);
+
+    try {
+        pb.collection('devices').unsubscribe(deviceId);
+    } catch (e) {}
+
+    startContent(record);
+    subscribeToDeviceChanges(deviceId);
 }
 
 function subscribeToDeviceChanges(deviceId) {
