@@ -11,11 +11,14 @@ pb.autoCancellation(false);
 // DOM Elements
 const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
+const image = document.getElementById('displayImage');
 const iframe = document.getElementById('contentFrame');
 const overlay = document.getElementById('interactionOverlay');
 const loadingOverlay = document.getElementById('loadingOverlay');
 const pairingOverlay = document.getElementById('pairingOverlay');
 const pairingCodeDisplay = document.getElementById('pairingCodeDisplay');
+
+let currentConfig = null;
 
 // 1. Generar un código aleatorio de 6 caracteres
 function generatePairingCode() {
@@ -30,54 +33,45 @@ function generatePairingCode() {
 async function fetchConfig(groupId) {
     if (!groupId) {
         console.warn('No group ID provided for fetchConfig');
-        return;
+        return null;
     }
 
     try {
-        // Fetch the latest config from PocketBase for the specific group
         const record = await pb.collection('pwa_config').getFirstListItem(`group = "${groupId}"`, {
             sort: '-created',
         });
 
         if (record) {
             console.log('Config fetched from PocketBase:', record);
+            currentConfig = record;
 
-            // Update URLs from PocketBase
-            if (record.redirect_url) REDIRECT_URL = record.redirect_url;
-
+            // Pre-calculate URLs
             if (record.video_url) {
-                if (record.video_url.startsWith('http')) {
-                    VIDEO_URL = record.video_url;
-                } else {
-                    VIDEO_URL = pb.files.getURL(record, record.video_url);
-                }
-
-                // Update video source
-                const source = video.querySelector('source');
-                if (source) {
-                    source.src = VIDEO_URL;
-                    video.load(); // Reload video with new source
-                }
+                record.video_full_url = pb.files.getURL(record, record.video_url);
             }
+            if (record.image_url) {
+                record.image_full_url = pb.files.getURL(record, record.image_url);
+            }
+
+            return record;
         }
     } catch (error) {
         console.warn('Failed to fetch from PocketBase, using fallbacks:', error);
     }
+    return null;
 }
 
 const handleInteraction = () => {
-    // Only handle interaction if we are not in the pairing screen
-    if (!pairingOverlay.classList.contains('hidden')) return;
+    if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
 
-    console.log('Interaction detected, loading frame...');
-
-    // Set source and show iframe
-    iframe.src = REDIRECT_URL;
-    iframe.classList.add('visible');
-
-    // Hide video and overlay
-    video.classList.add('hidden');
-    overlay.classList.add('hidden');
+    // Only video_interactive reacts to touch/click by showing the iframe
+    if (currentConfig.content_type === 'video_interactive') {
+        console.log('Interaction detected, loading frame...');
+        iframe.src = currentConfig.redirect_url;
+        iframe.classList.add('visible');
+        video.classList.add('hidden');
+        overlay.classList.add('hidden');
+    }
 };
 
 // Add listeners for touch and click
@@ -91,38 +85,100 @@ function showPairingScreen(code) {
     // Ocultar los otros elementos
     loadingOverlay.classList.add('hidden');
     video.classList.add('hidden');
+    image.classList.add('hidden');
     iframe.classList.remove('visible');
 }
 
 async function startContent(device) {
     console.log("¡Dispositivo vinculado!", device ? device.name : "Local");
 
-    // Ocultar pantalla de vinculación
     pairingOverlay.classList.add('hidden');
-
-    // Mostrar loading
     loadingOverlay.classList.remove('hidden');
     loadingOverlay.style.opacity = '1';
 
-    // 1. Fetch dynamic config using the device's group ID
     const groupId = device.group || localStorage.getItem('pwa_group_id');
-    await fetchConfig(groupId);
 
-    // 2. Play video
-    try {
-        await video.play();
-        // 3. Hide loading only after video playback starts successfully
-        video.classList.remove('hidden');
-        loadingOverlay.style.opacity = '0';
-        setTimeout(() => {
-            loadingOverlay.classList.add('hidden');
-        }, 500);
-    } catch (error) {
-        console.warn('Auto-play was prevented or failed. Waiting for first interaction to play if needed.', error);
-        // Still hide loading so user can interact to play
-        video.classList.remove('hidden');
+    // Initial fetch
+    await updateContentFromConfig(groupId);
+
+    // Subscribe to future changes in pwa_config for this group
+    subscribeToConfigChanges(groupId);
+
+    // Polling fallback for config updates (every 30 seconds)
+    setInterval(() => {
+        updateContentFromConfig(groupId);
+    }, 30000);
+}
+
+async function updateContentFromConfig(groupId) {
+    const config = await fetchConfig(groupId);
+    if (!config) return;
+
+    renderContent(config);
+
+    // Hide loading if it was visible
+    loadingOverlay.style.opacity = '0';
+    setTimeout(() => {
         loadingOverlay.classList.add('hidden');
+    }, 500);
+}
+
+function renderContent(config) {
+    const type = config.content_type || 'video_interactive';
+
+    // Reset visibility
+    video.classList.add('hidden');
+    image.classList.add('hidden');
+    iframe.classList.remove('visible');
+    overlay.classList.add('hidden');
+    video.pause();
+
+    if (type === 'video_interactive' || type === 'video_only') {
+        const source = video.querySelector('source');
+        if (source && config.video_full_url) {
+            // Only reload if URL changed
+            if (source.src !== config.video_full_url) {
+                source.src = config.video_full_url;
+                video.load();
+            }
+
+            video.play().then(() => {
+                video.classList.remove('hidden');
+                if (type === 'video_interactive') overlay.classList.remove('hidden');
+            }).catch(e => {
+                console.warn("Video play failed:", e);
+                video.classList.remove('hidden');
+            });
+        }
+    } else if (type === 'image_only') {
+        if (config.image_full_url) {
+            image.src = config.image_full_url;
+            image.classList.remove('hidden');
+        }
+    } else if (type === 'web_only') {
+        if (config.redirect_url) {
+            // Only reload if URL changed
+            if (iframe.src !== config.redirect_url) {
+                iframe.src = config.redirect_url;
+            }
+            iframe.classList.add('visible');
+        }
     }
+}
+
+function subscribeToConfigChanges(groupId) {
+    // We subscribe to all pwa_config changes and filter by group in the callback
+    // because PocketBase server-side filtering in subscribe is only available for some versions/configs
+    pb.collection('pwa_config').subscribe('*', (e) => {
+        if (e.action === 'update' || e.action === 'create') {
+            if (e.record.group === groupId) {
+                console.log("Content update detected via Realtime!");
+                updateContentFromConfig(groupId);
+            }
+        }
+    }).catch(err => {
+        console.debug("Could not subscribe to config changes (using polling)", err);
+    });
 }
 
 async function checkDevicePairing() {
@@ -229,6 +285,7 @@ function subscribeToDeviceChanges(deviceId) {
             // Limpiar todo y volver a pantalla de vinculación
             video.pause();
             video.classList.add('hidden');
+            image.classList.add('hidden');
             iframe.src = 'about:blank';
             iframe.classList.remove('visible');
             overlay.classList.remove('hidden'); // Restaurar para el proximo inicio
