@@ -39,18 +39,24 @@ async function fetchConfig(groupId) {
     try {
         const record = await pb.collection('pwa_config').getFirstListItem(`group = "${groupId}"`, {
             sort: '-created',
+            expand: 'media' // Expand the media relation
         });
 
         if (record) {
             console.log('Config fetched from PocketBase:', record);
             currentConfig = record;
 
-            // Pre-calculate URLs
-            if (record.video_url) {
-                record.video_full_url = pb.files.getURL(record, record.video_url);
-            }
-            if (record.image_url) {
-                record.image_full_url = pb.files.getURL(record, record.image_url);
+            // Pre-calculate URLs from the expanded media record
+            if (record.expand && record.expand.media) {
+                const mediaRecord = record.expand.media;
+                const fileUrl = pb.files.getURL(mediaRecord, mediaRecord.file);
+
+                // Determine if it's a video or image based on content type (or extension, but content_type is safer here)
+                if (record.content_type === 'video_interactive' || record.content_type === 'video_only') {
+                    record.video_full_url = fileUrl;
+                } else if (record.content_type === 'image_only') {
+                    record.image_full_url = fileUrl;
+                }
             }
 
             return record;
