@@ -239,7 +239,7 @@ function subscribeToDeviceChanges(deviceId) {
             checkDevicePairing();
         }
     }).catch(err => {
-        console.warn("No se pudo suscribir a cambios del dispositivo", err);
+        console.debug("No se pudo suscribir a cambios del dispositivo (usando fallback)", err);
     });
 }
 
