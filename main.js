@@ -30,6 +30,10 @@ function generatePairingCode() {
     return result;
 }
 
+let playlistItems = [];
+let currentPlaylistItemIndex = 0;
+let playlistTimeout = null;
+
 async function fetchConfig(groupId) {
     if (!groupId) {
         console.warn('No group ID provided for fetchConfig');
@@ -39,24 +43,39 @@ async function fetchConfig(groupId) {
     try {
         const record = await pb.collection('pwa_config').getFirstListItem(`group = "${groupId}"`, {
             sort: '-created',
-            expand: 'media' // Expand the media relation
+            expand: 'media,playlist'
         });
 
         if (record) {
             console.log('Config fetched from PocketBase:', record);
             currentConfig = record;
 
-            // Pre-calculate URLs from the expanded media record
-            if (record.expand && record.expand.media) {
+            // Pre-calculate URLs if not a playlist
+            if (record.content_type !== 'playlist' && record.expand && record.expand.media) {
                 const mediaRecord = record.expand.media;
                 const fileUrl = pb.files.getURL(mediaRecord, mediaRecord.file);
 
-                // Determine if it's a video or image based on content type (or extension, but content_type is safer here)
                 if (record.content_type === 'video_interactive' || record.content_type === 'video_only') {
                     record.video_full_url = fileUrl;
                 } else if (record.content_type === 'image_only') {
                     record.image_full_url = fileUrl;
                 }
+            }
+
+            // If it's a playlist, fetch items
+            if (record.content_type === 'playlist' && record.playlist) {
+                const items = await pb.collection('playlist_items').getFullList({
+                    filter: `playlist = "${record.playlist}"`,
+                    sort: 'sort_order',
+                    expand: 'media'
+                });
+                playlistItems = items.map(item => ({
+                    ...item,
+                    full_url: pb.files.getURL(item.expand.media, item.expand.media.file)
+                }));
+                console.log('Playlist items fetched:', playlistItems);
+            } else {
+                playlistItems = [];
             }
 
             return record;
@@ -77,6 +96,12 @@ const handleInteraction = () => {
         iframe.classList.add('visible');
         video.classList.add('hidden');
         overlay.classList.add('hidden');
+
+        // If we were in a playlist, stop the timer
+        if (playlistTimeout) {
+            clearTimeout(playlistTimeout);
+            playlistTimeout = null;
+        }
     }
 };
 
@@ -93,6 +118,11 @@ function showPairingScreen(code) {
     video.classList.add('hidden');
     image.classList.add('hidden');
     iframe.classList.remove('visible');
+
+    if (playlistTimeout) {
+        clearTimeout(playlistTimeout);
+        playlistTimeout = null;
+    }
 }
 
 async function startContent(device) {
@@ -120,6 +150,7 @@ async function updateContentFromConfig(groupId) {
     const config = await fetchConfig(groupId);
     if (!config) return;
 
+    currentPlaylistItemIndex = 0; // Reset index on config change
     renderContent(config);
 
     // Hide loading if it was visible
@@ -132,22 +163,28 @@ async function updateContentFromConfig(groupId) {
 function renderContent(config) {
     const type = config.content_type || 'video_interactive';
 
-    // Reset visibility
+    // Reset visibility and timers
     video.classList.add('hidden');
     image.classList.add('hidden');
     iframe.classList.remove('visible');
     overlay.classList.add('hidden');
     video.pause();
+    if (playlistTimeout) {
+        clearTimeout(playlistTimeout);
+        playlistTimeout = null;
+    }
 
-    if (type === 'video_interactive' || type === 'video_only') {
+    if (type === 'playlist') {
+        renderPlaylistItem();
+    } else if (type === 'video_interactive' || type === 'video_only') {
         const source = video.querySelector('source');
         if (source && config.video_full_url) {
-            // Only reload if URL changed
             if (source.src !== config.video_full_url) {
                 source.src = config.video_full_url;
                 video.load();
             }
-
+            video.loop = true; // Loop for single video mode
+            video.onended = null;
             video.play().then(() => {
                 video.classList.remove('hidden');
                 if (type === 'video_interactive') overlay.classList.remove('hidden');
@@ -163,13 +200,53 @@ function renderContent(config) {
         }
     } else if (type === 'web_only') {
         if (config.redirect_url) {
-            // Only reload if URL changed
             if (iframe.src !== config.redirect_url) {
                 iframe.src = config.redirect_url;
             }
             iframe.classList.add('visible');
         }
     }
+}
+
+function renderPlaylistItem() {
+    if (playlistItems.length === 0) {
+        console.warn('Playlist is empty');
+        return;
+    }
+
+    const item = playlistItems[currentPlaylistItemIndex];
+    const isVideo = item.full_url.toLowerCase().endsWith('.mp4');
+
+    // Hide previous
+    video.classList.add('hidden');
+    image.classList.add('hidden');
+    video.pause();
+
+    if (isVideo) {
+        const source = video.querySelector('source');
+        if (source && source.src !== item.full_url) {
+            source.src = item.full_url;
+            video.load();
+        }
+        video.loop = false; // Don't loop in playlist mode
+        video.onended = nextPlaylistItem;
+        video.play().then(() => {
+            video.classList.remove('hidden');
+        }).catch(e => {
+            console.error('Video play error in playlist:', e);
+            nextPlaylistItem(); // Skip on error
+        });
+    } else {
+        image.src = item.full_url;
+        image.classList.remove('hidden');
+        const duration = (item.duration || 5) * 1000;
+        playlistTimeout = setTimeout(nextPlaylistItem, duration);
+    }
+}
+
+function nextPlaylistItem() {
+    currentPlaylistItemIndex = (currentPlaylistItemIndex + 1) % playlistItems.length;
+    renderPlaylistItem();
 }
 
 function subscribeToConfigChanges(groupId) {
