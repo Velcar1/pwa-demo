@@ -41,44 +41,67 @@ async function fetchConfig(groupId) {
     }
 
     try {
-        const record = await pb.collection('pwa_config').getFirstListItem(`group = "${groupId}"`, {
+        const records = await pb.collection('pwa_config').getFullList({
+            filter: `group = "${groupId}"`,
             sort: '-created',
             expand: 'media,playlist'
         });
 
-        if (record) {
-            console.log('Config fetched from PocketBase:', record);
-            currentConfig = record;
+        if (records.length > 0) {
+            // Evaluamos la configuración activa
+            const now = new Date();
+            let activeRecord = null;
+            let baseRecord = null;
 
-            // Pre-calculate URLs if not a playlist
-            if (record.content_type !== 'playlist' && record.expand && record.expand.media) {
-                const mediaRecord = record.expand.media;
-                const fileUrl = pb.files.getURL(mediaRecord, mediaRecord.file);
-
-                if (record.content_type === 'video_interactive' || record.content_type === 'video_only') {
-                    record.video_full_url = fileUrl;
-                } else if (record.content_type === 'image_only') {
-                    record.image_full_url = fileUrl;
+            for (const record of records) {
+                if (record.is_schedule && record.schedule_start && record.schedule_end) {
+                    const start = new Date(record.schedule_start);
+                    const end = new Date(record.schedule_end);
+                    if (now >= start && now <= end) {
+                        activeRecord = record; // Encontramos un horario activo
+                        break;
+                    }
+                } else if (!record.is_schedule) {
+                    if (!baseRecord) baseRecord = record; // Guardamos la conf base
                 }
             }
 
-            // If it's a playlist, fetch items
-            if (record.content_type === 'playlist' && record.playlist) {
-                const items = await pb.collection('playlist_items').getFullList({
-                    filter: `playlist = "${record.playlist}"`,
-                    sort: 'sort_order',
-                    expand: 'media'
-                });
-                playlistItems = items.map(item => ({
-                    ...item,
-                    full_url: pb.files.getURL(item.expand.media, item.expand.media.file)
-                }));
-                console.log('Playlist items fetched:', playlistItems);
-            } else {
-                playlistItems = [];
-            }
+            const recordToUse = activeRecord || baseRecord;
 
-            return record;
+            if (recordToUse) {
+                console.log('Active Config determined:', recordToUse);
+                currentConfig = recordToUse;
+
+                // Pre-calculate URLs if not a playlist
+                if (recordToUse.content_type !== 'playlist' && recordToUse.expand && recordToUse.expand.media) {
+                    const mediaRecord = recordToUse.expand.media;
+                    const fileUrl = pb.files.getURL(mediaRecord, mediaRecord.file);
+
+                    if (recordToUse.content_type === 'video_interactive' || recordToUse.content_type === 'video_only') {
+                        recordToUse.video_full_url = fileUrl;
+                    } else if (recordToUse.content_type === 'image_only') {
+                        recordToUse.image_full_url = fileUrl;
+                    }
+                }
+
+                // If it's a playlist, fetch items
+                if (recordToUse.content_type === 'playlist' && recordToUse.playlist) {
+                    const items = await pb.collection('playlist_items').getFullList({
+                        filter: `playlist = "${recordToUse.playlist}"`,
+                        sort: 'sort_order',
+                        expand: 'media'
+                    });
+                    playlistItems = items.map(item => ({
+                        ...item,
+                        full_url: pb.files.getURL(item.expand.media, item.expand.media.file)
+                    }));
+                    console.log('Playlist items fetched:', playlistItems);
+                } else {
+                    playlistItems = [];
+                }
+
+                return recordToUse;
+            }
         }
     } catch (error) {
         console.warn('Failed to fetch from PocketBase, using fallbacks:', error);
