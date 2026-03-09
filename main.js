@@ -1,7 +1,7 @@
 import PocketBase from 'pocketbase';
 
 // Configuration & Fallbacks
-const PB_URL = import.meta.env.VITE_PB_URL || 'https://pretty-provider-inline-lesson.trycloudflare.com/';
+const PB_URL = import.meta.env.VITE_PB_URL || 'https://clinton-teaches-until-overcome.trycloudflare.com/';
 let REDIRECT_URL = 'https://d107qu3rkmrqtq.cloudfront.net/?device=taipei_row&sku=default&carrier=default&json=device.json';
 let VIDEO_URL = '/video.mp4';
 
