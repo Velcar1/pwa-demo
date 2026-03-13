@@ -172,21 +172,31 @@ async function startContent(device) {
 }
 
 async function updateContentFromConfig(groupId) {
-    const config = await fetchConfig(groupId);
-    if (!config) return;
+    console.log("[PWA] Fetching config for group:", groupId);
+    try {
+        const config = await fetchConfig(groupId);
+        if (!config) {
+            console.warn("[PWA] No config found for group, skipping render.");
+            return;
+        }
 
-    currentPlaylistItemIndex = 0; // Reset index on config change
-    renderContent(config);
+        console.log("[PWA] Config update found, rendering...");
+        currentPlaylistItemIndex = 0; 
+        renderContent(config);
 
-    // Hide loading if it was visible
-    loadingOverlay.style.opacity = '0';
-    setTimeout(() => {
-        loadingOverlay.classList.add('hidden');
-    }, 500);
+        // Hide loading
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => {
+            loadingOverlay.classList.add('hidden');
+        }, 500);
+    } catch (err) {
+        console.error("[PWA] Critical error in updateContentFromConfig:", err);
+    }
 }
 
 function renderContent(config) {
     const type = config.content_type || 'video_interactive';
+    console.log("[PWA] Rendering content type:", type);
 
     // Reset visibility and timers
     video.classList.add('hidden');
@@ -204,27 +214,33 @@ function renderContent(config) {
     } else if (type === 'video_interactive' || type === 'video_only') {
         const source = video.querySelector('source');
         if (source && config.video_full_url) {
+            console.log("[PWA] Setting video source:", config.video_full_url);
             if (source.src !== config.video_full_url) {
                 source.src = config.video_full_url;
                 video.load();
             }
             video.loop = true; // Loop for single video mode
             video.onended = null;
-            video.play().then(() => {
-                video.classList.remove('hidden');
-                if (type === 'video_interactive') overlay.classList.remove('hidden');
-            }).catch(e => {
-                console.warn("Video play failed:", e);
-                video.classList.remove('hidden');
+            
+            // Show video BEFORE playing to avoid black screen if play is blocked/slow
+            video.classList.remove('hidden');
+            if (type === 'video_interactive') overlay.classList.remove('hidden');
+
+            video.play().catch(e => {
+                console.warn("[PWA] Auto-play blocked or failed, waiting for user/retry:", e);
             });
+        } else {
+            console.warn("[PWA] Missing video source or URL");
         }
     } else if (type === 'image_only') {
         if (config.image_full_url) {
+            console.log("[PWA] Rendering image:", config.image_full_url);
             image.src = config.image_full_url;
             image.classList.remove('hidden');
         }
     } else if (type === 'web_only') {
         if (config.redirect_url) {
+            console.log("[PWA] Rendering web frame:", config.redirect_url);
             if (iframe.src !== config.redirect_url) {
                 iframe.src = config.redirect_url;
             }
