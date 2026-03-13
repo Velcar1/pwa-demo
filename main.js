@@ -163,10 +163,12 @@ async function startContent(device) {
     // Subscribe to future changes in pwa_config for this group
     subscribeToConfigChanges(groupId);
 
-    // Polling fallback for config updates (every 30 seconds)
+    // Polling fallback for config updates
+    // If Realtime is unstable, this ensures content still updates
     setInterval(() => {
+        console.log("Checking for content updates (scheduled check)...");
         updateContentFromConfig(groupId);
-    }, 30000);
+    }, 45000); // Check every 45s as safety net
 }
 
 async function updateContentFromConfig(groupId) {
@@ -273,17 +275,17 @@ function nextPlaylistItem() {
 }
 
 function subscribeToConfigChanges(groupId) {
-    // We subscribe to all pwa_config changes and filter by group in the callback
-    // because PocketBase server-side filtering in subscribe is only available for some versions/configs
+    // Attempt to subscribe. We catch errors silently to avoid console noise
+    // since the polling fallback is already active.
     pb.collection('pwa_config').subscribe('*', (e) => {
-        if (e.action === 'update' || e.action === 'create') {
-            if (e.record.group === groupId) {
-                console.log("Content update detected via Realtime!");
-                updateContentFromConfig(groupId);
-            }
+        if ((e.action === 'update' || e.action === 'create') && e.record.group === groupId) {
+            console.log("Content update detected via Realtime!");
+            updateContentFromConfig(groupId);
         }
     }).catch(err => {
-        console.debug("Could not subscribe to config changes (using polling)", err);
+        // Silencing non-critical errors typical of Cloudflare Tunnels/timeouts
+        if (err.isAbort) return; 
+        console.info("Realtime config sync unavailable. Polling fallback is active.");
     });
 }
 
@@ -381,7 +383,7 @@ function finalizePairing(deviceId, record) {
 }
 
 function subscribeToDeviceChanges(deviceId) {
-    // Escuchar cambios para saber si nos desvinculan (is_registered pasa a false o se borra el registro)
+    // Escuchar cambios para saber si nos desvinculan
     pb.collection('devices').subscribe(deviceId, (e) => {
         if (e.action === 'delete' || (e.action === 'update' && !e.record.is_registered)) {
             console.log("El dispositivo ha sido desvinculado remotamente.");
@@ -394,15 +396,16 @@ function subscribeToDeviceChanges(deviceId) {
             image.classList.add('hidden');
             iframe.src = 'about:blank';
             iframe.classList.remove('visible');
-            overlay.classList.remove('hidden'); // Restaurar para el proximo inicio
+            overlay.classList.remove('hidden'); 
 
             // Evitar duplicar suscripciones
-            pb.collection('devices').unsubscribe(deviceId);
+            try { pb.collection('devices').unsubscribe(deviceId); } catch(ex) {}
 
             checkDevicePairing();
         }
     }).catch(err => {
-        console.debug("No se pudo suscribir a cambios del dispositivo (usando fallback)", err);
+        if (err.isAbort) return;
+        console.info("Realtime device tracking unavailable. Status will be checked on reload.");
     });
 }
 
