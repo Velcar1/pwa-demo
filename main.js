@@ -175,20 +175,26 @@ async function updateContentFromConfig(groupId) {
     console.log("[PWA] Fetching config for group:", groupId);
     try {
         const config = await fetchConfig(groupId);
+        
+        // Hide loading REGARDLESS of config status, as long as we got a response/error
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => {
+            loadingOverlay.classList.add('hidden');
+        }, 500);
+
         if (!config) {
             console.warn("[PWA] No config found for group, skipping render.");
+            // Reset to clean state
+            video.classList.add('hidden');
+            image.classList.add('hidden');
+            iframe.classList.remove('visible');
+            overlay.classList.remove('hidden'); 
             return;
         }
 
         console.log("[PWA] Config update found, rendering...");
         currentPlaylistItemIndex = 0; 
         renderContent(config);
-
-        // Hide loading
-        loadingOverlay.style.opacity = '0';
-        setTimeout(() => {
-            loadingOverlay.classList.add('hidden');
-        }, 500);
     } catch (err) {
         console.error("[PWA] Critical error in updateContentFromConfig:", err);
     }
