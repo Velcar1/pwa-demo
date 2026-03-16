@@ -1,7 +1,7 @@
 import PocketBase from 'pocketbase';
 
 // Configuration & Fallbacks
-const PB_URL = import.meta.env.VITE_PB_URL || 'https://slots-institution-compact-gamma.trycloudflare.com/';
+const PB_URL = import.meta.env.VITE_PB_URL || 'https://firm-ordinary-metres-complex.trycloudflare.com/';
 let REDIRECT_URL = 'https://d107qu3rkmrqtq.cloudfront.net/?device=taipei_row&sku=default&carrier=default&json=device.json';
 let VIDEO_URL = '/video.mp4';
 
@@ -175,7 +175,7 @@ async function updateContentFromConfig(groupId) {
     console.log("[PWA] Fetching config for group:", groupId);
     try {
         const config = await fetchConfig(groupId);
-        
+
         // Hide loading REGARDLESS of config status, as long as we got a response/error
         loadingOverlay.style.opacity = '0';
         setTimeout(() => {
@@ -188,12 +188,12 @@ async function updateContentFromConfig(groupId) {
             video.classList.add('hidden');
             image.classList.add('hidden');
             iframe.classList.remove('visible');
-            overlay.classList.remove('hidden'); 
+            overlay.classList.remove('hidden');
             return;
         }
 
         console.log("[PWA] Config update found, rendering...");
-        currentPlaylistItemIndex = 0; 
+        currentPlaylistItemIndex = 0;
         renderContent(config);
     } catch (err) {
         console.error("[PWA] Critical error in updateContentFromConfig:", err);
@@ -227,7 +227,7 @@ function renderContent(config) {
             }
             video.loop = true; // Loop for single video mode
             video.onended = null;
-            
+
             // Show video BEFORE playing to avoid black screen if play is blocked/slow
             video.classList.remove('hidden');
             if (type === 'video_interactive') overlay.classList.remove('hidden');
@@ -306,7 +306,7 @@ function subscribeToConfigChanges(groupId) {
         }
     }).catch(err => {
         // Silencing non-critical errors typical of Cloudflare Tunnels/timeouts
-        if (err.isAbort) return; 
+        if (err.isAbort) return;
         console.info("Realtime config sync unavailable. Polling fallback is active.");
     });
 }
@@ -418,10 +418,10 @@ function subscribeToDeviceChanges(deviceId) {
             image.classList.add('hidden');
             iframe.src = 'about:blank';
             iframe.classList.remove('visible');
-            overlay.classList.remove('hidden'); 
+            overlay.classList.remove('hidden');
 
             // Evitar duplicar suscripciones
-            try { pb.collection('devices').unsubscribe(deviceId); } catch(ex) {}
+            try { pb.collection('devices').unsubscribe(deviceId); } catch (ex) { }
 
             checkDevicePairing();
         }
