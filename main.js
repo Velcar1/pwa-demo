@@ -37,9 +37,12 @@ const mediaCache = new (class MediaCacheManager {
         const cachedResponse = await cache.match(url);
 
         if (cachedResponse) {
+            console.log(`[Cache] HIT: Serving from local storage: ${url}`);
             const blob = await cachedResponse.blob();
             return URL.createObjectURL(blob);
         }
+
+        console.log(`[Cache] MISS: Fetching from network: ${url}`);
 
         this.activeDownloads++;
         this.updateUI();
@@ -252,10 +255,13 @@ async function startContent(device) {
     await updateContentFromConfig(groupId);
 
     // Subscribe to future changes in pwa_config for this group (only if online)
-    if (groupId && navigator.onLine) {
-        subscribeToConfigChanges(groupId);
+    if (groupId) {
+        if (navigator.onLine) {
+            subscribeToConfigChanges(groupId);
+        }
         
-        const updateInterval = setInterval(() => {
+        // Polling fallback check
+        setInterval(() => {
             if (navigator.onLine) {
                 console.log("Checking for content updates (scheduled check)...");
                 updateContentFromConfig(groupId);
@@ -263,14 +269,18 @@ async function startContent(device) {
         }, 60000); // Check every 60s
     }
     
-    // Add online listener to resume sync/realtime when connection returns
-    window.addEventListener('online', () => {
-        console.log("Connection restored, resuming sync...");
-        if (groupId) {
-            updateContentFromConfig(groupId);
-            subscribeToConfigChanges(groupId);
-        }
-    });
+    // Add online listener ONCE
+    if (!window._onlineListenerAdded) {
+        window._onlineListenerAdded = true;
+        window.addEventListener('online', () => {
+            console.log("Connection restored, resuming sync...");
+            const currentGroupId = localStorage.getItem('pwa_group_id');
+            if (currentGroupId) {
+                updateContentFromConfig(currentGroupId);
+                subscribeToConfigChanges(currentGroupId);
+            }
+        });
+    }
 }
 
 async function updateContentFromConfig(groupId) {
@@ -278,14 +288,11 @@ async function updateContentFromConfig(groupId) {
     try {
         const config = await fetchConfig(groupId);
 
-        // Hide loading REGARDLESS of config status, as long as we got a response/error
-        loadingOverlay.style.opacity = '0';
-        setTimeout(() => {
-            loadingOverlay.classList.add('hidden');
-        }, 500);
-
         if (!config) {
             console.warn("[PWA] No config found for group, skipping render.");
+            loadingOverlay.style.opacity = '0';
+            setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
+            
             // Reset to clean state
             video.classList.add('hidden');
             image.classList.add('hidden');
@@ -296,9 +303,19 @@ async function updateContentFromConfig(groupId) {
 
         console.log("[PWA] Config update found, rendering...");
         currentPlaylistItemIndex = 0;
-        renderContent(config);
+        
+        // Await the actual rendering (which includes cache retrieval)
+        await renderContent(config);
+
+        // Hide loading ONLY AFTER content is prepared
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => {
+            loadingOverlay.classList.add('hidden');
+        }, 500);
     } catch (err) {
         console.error("[PWA] Critical error in updateContentFromConfig:", err);
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
     }
 }
 
@@ -318,7 +335,7 @@ async function renderContent(config) {
     }
 
     if (type === 'playlist') {
-        renderPlaylistItem();
+        await renderPlaylistItem();
     } else if (type === 'video_interactive' || type === 'video_only') {
         const source = video.querySelector('source');
         if (source && config.video_full_url) {
@@ -402,6 +419,7 @@ async function renderPlaylistItem() {
 
 function nextPlaylistItem() {
     currentPlaylistItemIndex = (currentPlaylistItemIndex + 1) % playlistItems.length;
+    console.log("[PWA] Advancing to next playlist item:", currentPlaylistItemIndex);
     renderPlaylistItem();
 }
 
