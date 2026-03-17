@@ -5,7 +5,8 @@ export default defineConfig({
     plugins: [
         VitePWA({
             registerType: 'autoUpdate',
-            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'video.mp4'],
+            // Include sw-media.js so it's copied to dist as-is (not processed)
+            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'video.mp4', 'sw-media.js'],
             manifest: {
                 name: 'PWA Motorola Video Loop',
                 short_name: 'MotorolaPWA',

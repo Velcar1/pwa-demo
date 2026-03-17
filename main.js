@@ -1,79 +1,21 @@
 import PocketBase from 'pocketbase';
 
-// Configuration & Fallbacks
+// --- Configuration ---
 const PB_URL = import.meta.env.VITE_PB_URL || 'https://firm-ordinary-metres-complex.trycloudflare.com/';
-let REDIRECT_URL = 'https://d107qu3rkmrqtq.cloudfront.net/?device=taipei_row&sku=default&carrier=default&json=device.json';
-let VIDEO_URL = '/video.mp4';
 
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
-// --- Media Cache Management ---
-const CACHE_NAME = 'l1nx-media-cache-v1';
+// --- Register custom media Service Worker ---
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw-media.js').then((reg) => {
+        console.log('[SW] Media service worker registered:', reg.scope);
+    }).catch((err) => {
+        console.warn('[SW] Service worker registration failed:', err);
+    });
+}
 
-const mediaCache = new (class MediaCacheManager {
-    constructor() {
-        this.activeDownloads = 0;
-    }
-
-    updateUI() {
-        const syncStatus = document.getElementById('syncStatus');
-        if (!syncStatus) return;
-        if (this.activeDownloads > 0) {
-            syncStatus.classList.remove('hidden');
-            syncStatus.style.opacity = '1';
-        } else {
-            syncStatus.style.opacity = '0';
-            setTimeout(() => {
-                if (this.activeDownloads === 0) syncStatus.classList.add('hidden');
-            }, 500);
-        }
-    }
-
-    async getOrCacheMedia(url) {
-        if (!url || url.startsWith('blob:')) return url;
-
-        const cache = await caches.open(CACHE_NAME);
-        const cachedResponse = await cache.match(url);
-
-        if (cachedResponse) {
-            console.log(`[Cache] HIT: Serving from local storage: ${url}`);
-            const blob = await cachedResponse.blob();
-            return URL.createObjectURL(blob);
-        }
-
-        console.log(`[Cache] MISS: Fetching from network: ${url}`);
-
-        this.activeDownloads++;
-        this.updateUI();
-
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('Network response was not ok');
-            
-            const responseToCache = response.clone();
-            await cache.put(url, responseToCache);
-            
-            const blob = await response.blob();
-            return URL.createObjectURL(blob);
-        } catch (error) {
-            console.error(`[Cache] Failed to fetch and cache: ${url}`, error);
-            return url;
-        } finally {
-            this.activeDownloads--;
-            this.updateUI();
-        }
-    }
-
-    async preCachePlaylist(items) {
-        if (items.length === 0) return;
-        console.log(`[Cache] Pre-caching ${items.length} playlist items...`);
-        await Promise.all(items.map(item => this.getOrCacheMedia(item.full_url)));
-        console.log(`[Cache] Pre-caching complete.`);
-    }
-})();
-
-// DOM Elements
+// --- DOM Elements ---
 const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
 const image = document.getElementById('displayImage');
@@ -83,334 +25,228 @@ const loadingOverlay = document.getElementById('loadingOverlay');
 const pairingOverlay = document.getElementById('pairingOverlay');
 const pairingCodeDisplay = document.getElementById('pairingCodeDisplay');
 
+// --- App State ---
 let currentConfig = null;
-
-// 1. Generar un código aleatorio de 6 caracteres
-function generatePairingCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Evitamos O, 0, I, 1 por confusión
-    let result = '';
-    for (let i = 0; i < 6; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-}
-
 let playlistItems = [];
 let currentPlaylistItemIndex = 0;
 let playlistTimeout = null;
 
+// --- Sync Indicator ---
+function showSync(message) {
+    const el = document.getElementById('syncStatus');
+    if (!el) return;
+    el.textContent = message || '⬇ Sincronizando...';
+    el.classList.remove('hidden');
+    el.style.opacity = '1';
+}
+function hideSync() {
+    const el = document.getElementById('syncStatus');
+    if (!el) return;
+    el.style.opacity = '0';
+    setTimeout(() => el.classList.add('hidden'), 600);
+}
+
+// --- Persistence Helpers ---
+function saveConfig(config) {
+    try { localStorage.setItem('pwa_last_config', JSON.stringify(config)); } catch (e) {}
+}
+function getSavedConfig() {
+    try { return JSON.parse(localStorage.getItem('pwa_last_config')); } catch (e) { return null; }
+}
+function savePlaylist(items) {
+    try { localStorage.setItem('pwa_last_playlist', JSON.stringify(items)); } catch (e) {}
+}
+function getSavedPlaylist() {
+    try { return JSON.parse(localStorage.getItem('pwa_last_playlist')); } catch (e) { return null; }
+}
+
+// --- Pairing Code Generator ---
+function generatePairingCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let result = '';
+    for (let i = 0; i < 6; i++) result += chars[Math.floor(Math.random() * chars.length)];
+    return result;
+}
+
+// --- Fetch Config from PocketBase ---
 async function fetchConfig(groupId) {
+    if (!groupId) return null;
+
+    const records = await pb.collection('pwa_config').getFullList({
+        filter: `group = "${groupId}"`,
+        sort: '-created',
+        expand: 'media,playlist'
+    });
+
+    if (records.length === 0) return null;
+
+    const now = new Date();
+    let activeRecord = null;
+    let baseRecord = null;
+
+    for (const record of records) {
+        if (record.is_schedule && record.schedule_start && record.schedule_end) {
+            const start = new Date(record.schedule_start);
+            const end = new Date(record.schedule_end);
+            if (now >= start && now <= end) { activeRecord = record; break; }
+        } else if (!record.is_schedule && !baseRecord) {
+            baseRecord = record;
+        }
+    }
+
+    const recordToUse = activeRecord || baseRecord;
+    if (!recordToUse) return null;
+
+    // Compute media URL
+    if (recordToUse.content_type !== 'playlist' && recordToUse.expand?.media) {
+        const mediaRecord = recordToUse.expand.media;
+        const fileUrl = pb.files.getURL(mediaRecord, mediaRecord.file);
+        if (recordToUse.content_type === 'video_interactive' || recordToUse.content_type === 'video_only') {
+            recordToUse.video_full_url = fileUrl;
+        } else if (recordToUse.content_type === 'image_only') {
+            recordToUse.image_full_url = fileUrl;
+        }
+    }
+
+    // Fetch playlist items if needed
+    if (recordToUse.content_type === 'playlist' && recordToUse.playlist) {
+        const items = await pb.collection('playlist_items').getFullList({
+            filter: `playlist = "${recordToUse.playlist}"`,
+            sort: 'sort_order',
+            expand: 'media'
+        });
+        const mapped = items.map(item => ({
+            ...item,
+            full_url: pb.files.getURL(item.expand.media, item.expand.media.file)
+        }));
+        savePlaylist(mapped);
+        playlistItems = mapped;
+        
+        // Pre-warm cache in background (service worker will cache automatically on normal fetch)
+        preWarmCache(mapped.map(i => i.full_url));
+    } else {
+        playlistItems = [];
+        // Pre-warm single media
+        const urls = [recordToUse.video_full_url, recordToUse.image_full_url].filter(Boolean);
+        preWarmCache(urls);
+    }
+
+    saveConfig(recordToUse);
+    return recordToUse;
+}
+
+// Pre-warm cache by fetching URLs silently in the background
+// The service worker will intercept these fetches and cache them automatically
+function preWarmCache(urls) {
+    if (!urls || urls.length === 0) return;
+    showSync('⬇ Sincronizando...');
+    let pending = urls.length;
+    urls.forEach(url => {
+        fetch(url, { mode: 'no-cors' }).catch(() => {}).finally(() => {
+            pending--;
+            if (pending <= 0) hideSync();
+        });
+    });
+}
+
+// --- Load Config: Try network first, fall back to localStorage ---
+async function loadConfig(groupId) {
     if (!groupId) {
-        console.warn('No group ID provided for fetchConfig');
-        return null;
+        console.warn('[PWA] No groupId provided.');
+        return getSavedConfig();
     }
 
     try {
-        const records = await pb.collection('pwa_config').getFullList({
-            filter: `group = "${groupId}"`,
-            sort: '-created',
-            expand: 'media,playlist'
-        });
-
-        if (records.length > 0) {
-            // Evaluamos la configuración activa
-            const now = new Date();
-            let activeRecord = null;
-            let baseRecord = null;
-
-            for (const record of records) {
-                if (record.is_schedule && record.schedule_start && record.schedule_end) {
-                    const start = new Date(record.schedule_start);
-                    const end = new Date(record.schedule_end);
-                    if (now >= start && now <= end) {
-                        activeRecord = record; // Encontramos un horario activo
-                        break;
-                    }
-                } else if (!record.is_schedule) {
-                    if (!baseRecord) baseRecord = record; // Guardamos la conf base
-                }
-            }
-
-            const recordToUse = activeRecord || baseRecord;
-
-            if (recordToUse) {
-                console.log('Active Config determined:', recordToUse);
-                currentConfig = recordToUse;
-                
-                // Persist current config metadata
-                localStorage.setItem('pwa_last_config', JSON.stringify(recordToUse));
-
-                // Pre-calculate URLs if not a playlist
-                if (recordToUse.content_type !== 'playlist' && recordToUse.expand && recordToUse.expand.media) {
-                    const mediaRecord = recordToUse.expand.media;
-                    const fileUrl = pb.files.getURL(mediaRecord, mediaRecord.file);
-
-                    if (recordToUse.content_type === 'video_interactive' || recordToUse.content_type === 'video_only') {
-                        recordToUse.video_full_url = fileUrl;
-                    } else if (recordToUse.content_type === 'image_only') {
-                        recordToUse.image_full_url = fileUrl;
-                    }
-                }
-
-                // If it's a playlist, fetch items
-                if (recordToUse.content_type === 'playlist' && recordToUse.playlist) {
-                    const items = await pb.collection('playlist_items').getFullList({
-                        filter: `playlist = "${recordToUse.playlist}"`,
-                        sort: 'sort_order',
-                        expand: 'media'
-                    });
-                    playlistItems = items.map(item => ({
-                        ...item,
-                        full_url: pb.files.getURL(item.expand.media, item.expand.media.file)
-                    }));
-                    console.log('Playlist items fetched:', playlistItems);
-                    
-                    // Persist playlist items metadata
-                    localStorage.setItem('pwa_last_playlist', JSON.stringify(playlistItems));
-                    
-                    // Trigger background pre-caching
-                    mediaCache.preCachePlaylist(playlistItems);
-                } else {
-                    playlistItems = [];
-                    localStorage.removeItem('pwa_last_playlist');
-                    // Pre-cache single media if applicable
-                    if (recordToUse.video_full_url) mediaCache.getOrCacheMedia(recordToUse.video_full_url);
-                    if (recordToUse.image_full_url) mediaCache.getOrCacheMedia(recordToUse.image_full_url);
-                }
-
-                return recordToUse;
-            }
+        const config = await fetchConfig(groupId);
+        if (config) {
+            console.log('[PWA] Config loaded from network.');
+            return config;
         }
-    } catch (error) {
-        console.warn('Failed to fetch from PocketBase, checking local storage:', error);
+    } catch (err) {
+        console.warn('[PWA] Network fetch failed, loading from local storage:', err.message);
     }
 
-    // FALLBACK: Load from localStorage if offline
-    const savedConfig = localStorage.getItem('pwa_last_config');
-    if (savedConfig) {
-        console.log('[Cache] Loading last successful config from localStorage');
-        currentConfig = JSON.parse(savedConfig);
-        
-        const savedPlaylist = localStorage.getItem('pwa_last_playlist');
-        if (savedPlaylist) {
-            playlistItems = JSON.parse(savedPlaylist);
-        }
-        
-        return currentConfig;
+    // Offline fallback
+    const saved = getSavedConfig();
+    if (saved) {
+        console.log('[PWA] Loaded config from localStorage.');
+        const savedPl = getSavedPlaylist();
+        if (savedPl) playlistItems = savedPl;
+        return saved;
     }
 
     return null;
 }
 
-const handleInteraction = () => {
-    if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
-
-    // Only video_interactive reacts to touch/click by showing the iframe
-    if (currentConfig.content_type === 'video_interactive') {
-        console.log('Interaction detected, loading frame...');
-        iframe.src = currentConfig.redirect_url;
-        iframe.classList.add('visible');
-        video.classList.add('hidden');
-        overlay.classList.add('hidden');
-
-        // If we were in a playlist, stop the timer
-        if (playlistTimeout) {
-            clearTimeout(playlistTimeout);
-            playlistTimeout = null;
-        }
-    }
-};
-
-// Add listeners for touch and click
-app.addEventListener('click', handleInteraction);
-app.addEventListener('touchstart', handleInteraction, { passive: true });
-
-function showPairingScreen(code) {
-    pairingCodeDisplay.textContent = code;
-    pairingOverlay.classList.remove('hidden');
-
-    // Ocultar los otros elementos
-    loadingOverlay.classList.add('hidden');
-    video.classList.add('hidden');
-    image.classList.add('hidden');
-    iframe.classList.remove('visible');
-
-    if (playlistTimeout) {
-        clearTimeout(playlistTimeout);
-        playlistTimeout = null;
-    }
-}
-
-async function startContent(device) {
-    if (!device) return;
-    console.log("Iniciando contenido para dispositivo:", device.id);
-
-    pairingOverlay.classList.add('hidden');
-    loadingOverlay.classList.remove('hidden');
-    loadingOverlay.style.opacity = '1';
-
-    const groupId = device.group || localStorage.getItem('pwa_group_id');
-
-    // Try to load initial content (works online and pulls from localStorage if offline)
-    await updateContentFromConfig(groupId);
-
-    // Subscribe to future changes in pwa_config for this group (only if online)
-    if (groupId) {
-        if (navigator.onLine) {
-            subscribeToConfigChanges(groupId);
-        }
-        
-        // Polling fallback check
-        setInterval(() => {
-            if (navigator.onLine) {
-                console.log("Checking for content updates (scheduled check)...");
-                updateContentFromConfig(groupId);
-            }
-        }, 60000); // Check every 60s
-    }
-    
-    // Add online listener ONCE
-    if (!window._onlineListenerAdded) {
-        window._onlineListenerAdded = true;
-        window.addEventListener('online', () => {
-            console.log("Connection restored, resuming sync...");
-            const currentGroupId = localStorage.getItem('pwa_group_id');
-            if (currentGroupId) {
-                updateContentFromConfig(currentGroupId);
-                subscribeToConfigChanges(currentGroupId);
-            }
-        });
-    }
-}
-
-async function updateContentFromConfig(groupId) {
-    console.log("[PWA] Fetching config for group:", groupId);
-    try {
-        const config = await fetchConfig(groupId);
-
-        if (!config) {
-            console.warn("[PWA] No config found for group, skipping render.");
-            loadingOverlay.style.opacity = '0';
-            setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
-            
-            // Reset to clean state
-            video.classList.add('hidden');
-            image.classList.add('hidden');
-            iframe.classList.remove('visible');
-            overlay.classList.remove('hidden');
-            return;
-        }
-
-        console.log("[PWA] Config update found, rendering...");
-        currentPlaylistItemIndex = 0;
-        
-        // Await the actual rendering (which includes cache retrieval)
-        await renderContent(config);
-
-        // Hide loading ONLY AFTER content is prepared
-        loadingOverlay.style.opacity = '0';
-        setTimeout(() => {
-            loadingOverlay.classList.add('hidden');
-        }, 500);
-    } catch (err) {
-        console.error("[PWA] Critical error in updateContentFromConfig:", err);
-        loadingOverlay.style.opacity = '0';
-        setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
-    }
-}
-
+// --- Rendering ---
 async function renderContent(config) {
-    const type = config.content_type || 'video_interactive';
-    console.log("[PWA] Rendering content type:", type);
+    if (!config) return;
 
-    // Reset visibility and timers
+    const type = config.content_type || 'video_interactive';
+    console.log('[PWA] Rendering:', type);
+
+    // Reset all
     video.classList.add('hidden');
     image.classList.add('hidden');
     iframe.classList.remove('visible');
     overlay.classList.add('hidden');
     video.pause();
-    if (playlistTimeout) {
-        clearTimeout(playlistTimeout);
-        playlistTimeout = null;
-    }
+
+    if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
 
     if (type === 'playlist') {
-        await renderPlaylistItem();
+        currentPlaylistItemIndex = 0;
+        renderPlaylistItem();
     } else if (type === 'video_interactive' || type === 'video_only') {
-        const source = video.querySelector('source');
-        if (source && config.video_full_url) {
-            // Get cached version
-            const cachedUrl = await mediaCache.getOrCacheMedia(config.video_full_url);
-            
-            console.log("[PWA] Setting video source:", cachedUrl);
-            if (source.src !== cachedUrl) {
-                source.src = cachedUrl;
-                video.load();
-            }
-            video.loop = true; // Loop for single video mode
+        if (config.video_full_url) {
+            const source = video.querySelector('source') || video;
+            source.src = config.video_full_url;
+            video.load();
+            video.loop = true;
             video.onended = null;
-
-            // Show video BEFORE playing to avoid black screen if play is blocked/slow
             video.classList.remove('hidden');
             if (type === 'video_interactive') overlay.classList.remove('hidden');
-
-            video.play().catch(e => {
-                console.warn("[PWA] Auto-play blocked or failed, waiting for user/retry:", e);
-            });
+            video.play().catch(e => console.warn('[PWA] Autoplay blocked:', e.message));
         } else {
-            console.warn("[PWA] Missing video source or URL");
+            console.warn('[PWA] No video URL in config.');
         }
     } else if (type === 'image_only') {
         if (config.image_full_url) {
-            const cachedUrl = await mediaCache.getOrCacheMedia(config.image_full_url);
-            console.log("[PWA] Rendering image:", cachedUrl);
-            image.src = cachedUrl;
+            image.src = config.image_full_url;
             image.classList.remove('hidden');
         }
     } else if (type === 'web_only') {
         if (config.redirect_url) {
-            console.log("[PWA] Rendering web frame:", config.redirect_url);
-            if (iframe.src !== config.redirect_url) {
-                iframe.src = config.redirect_url;
-            }
+            if (iframe.src !== config.redirect_url) iframe.src = config.redirect_url;
             iframe.classList.add('visible');
         }
     }
 }
 
-async function renderPlaylistItem() {
-    if (playlistItems.length === 0) {
-        console.warn('Playlist is empty');
-        return;
-    }
+function renderPlaylistItem() {
+    if (playlistItems.length === 0) { console.warn('Playlist is empty.'); return; }
 
     const item = playlistItems[currentPlaylistItemIndex];
-    
-    // Get cached version
-    const cachedUrl = await mediaCache.getOrCacheMedia(item.full_url);
-    const isVideo = item.full_url.toLowerCase().endsWith('.mp4');
+    const isVideo = item.full_url.toLowerCase().match(/\.(mp4|webm|ogg)(\?|$)/i);
 
-    // Hide previous
     video.classList.add('hidden');
     image.classList.add('hidden');
     video.pause();
 
     if (isVideo) {
-        const source = video.querySelector('source');
-        if (source && source.src !== cachedUrl) {
-            source.src = cachedUrl;
-            video.load();
-        }
-        video.loop = false; // Don't loop in playlist mode
+        const source = video.querySelector('source') || video;
+        source.src = item.full_url;
+        video.load();
+        video.loop = false;
         video.onended = nextPlaylistItem;
         video.play().then(() => {
             video.classList.remove('hidden');
         }).catch(e => {
-            console.error('Video play error in playlist:', e);
-            nextPlaylistItem(); // Skip on error
+            console.error('[PWA] Playlist video error:', e.message);
+            nextPlaylistItem();
         });
     } else {
-        image.src = cachedUrl;
+        image.src = item.full_url;
         image.classList.remove('hidden');
         const duration = (item.duration || 5) * 1000;
         playlistTimeout = setTimeout(nextPlaylistItem, duration);
@@ -419,154 +255,227 @@ async function renderPlaylistItem() {
 
 function nextPlaylistItem() {
     currentPlaylistItemIndex = (currentPlaylistItemIndex + 1) % playlistItems.length;
-    console.log("[PWA] Advancing to next playlist item:", currentPlaylistItemIndex);
     renderPlaylistItem();
 }
 
+// --- Main content loader ---
+async function updateContentFromConfig(groupId) {
+    console.log('[PWA] Loading config for group:', groupId);
+    try {
+        const config = await loadConfig(groupId);
+        currentConfig = config;
+
+        // Hide loading overlay
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
+
+        if (!config) {
+            console.warn('[PWA] No config available (online or offline).');
+            video.classList.add('hidden');
+            image.classList.add('hidden');
+            iframe.classList.remove('visible');
+            return;
+        }
+
+        renderContent(config);
+    } catch (err) {
+        console.error('[PWA] Fatal error loading config:', err);
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
+    }
+}
+
+// --- Real-time subscription ---
 function subscribeToConfigChanges(groupId) {
-    // Attempt to subscribe. We catch errors silently to avoid console noise
-    // since the polling fallback is already active.
     pb.collection('pwa_config').subscribe('*', (e) => {
         if ((e.action === 'update' || e.action === 'create') && e.record.group === groupId) {
-            console.log("Content update detected via Realtime!");
+            console.log('[PWA] Real-time config update received.');
             updateContentFromConfig(groupId);
         }
     }).catch(err => {
-        // Silencing non-critical errors typical of Cloudflare Tunnels/timeouts
-        if (err.isAbort) return;
-        console.info("Realtime config sync unavailable. Polling fallback is active.");
+        if (!err.isAbort) console.info('[PWA] Realtime unavailable, polling active.');
     });
 }
 
-async function checkDevicePairing() {
-    // Revisar si ya estamos registrados localmente
-    let deviceId = localStorage.getItem('pwa_device_id');
-    let groupId = localStorage.getItem('pwa_group_id');
+// --- Start content display ---
+async function startContent(device) {
+    if (!device) return;
+    console.log('[PWA] Starting content for device:', device.id);
 
-    if (!deviceId) {
-        // --- PROCESO DE VINCULACIÓN NUEVA ---
-        const code = generatePairingCode();
-        console.log("Generando nuevo código de vinculación:", code);
+    pairingOverlay.classList.add('hidden');
+    loadingOverlay.classList.remove('hidden');
+    loadingOverlay.style.opacity = '1';
 
-        try {
-            // Crear el registro en PocketBase
-            const record = await pb.collection('devices').create({
-                pairing_code: code,
-                is_registered: false
-            });
-
-            deviceId = record.id;
-            console.log("Registro creado en PocketBase con ID:", deviceId);
-
-            // Mostrar el código en pantalla al usuario
-            showPairingScreen(code);
-
-            // 1. Suscribirse en tiempo real (SSE)
-            pb.collection('devices').subscribe(deviceId, (e) => {
-                console.log("Evento recibido vía Realtime:", e.action);
-                if (e.record.is_registered) {
-                    finalizePairing(deviceId, e.record);
-                }
-            });
-
-            // 2. FALLBACK: Polling (Consultar cada 5 segundos por si falla Realtime)
-            const pollingInterval = setInterval(async () => {
-                try {
-                    console.log("Verificando estado vía Polling...");
-                    const checkRecord = await pb.collection('devices').getOne(deviceId);
-                    if (checkRecord.is_registered) {
-                        clearInterval(pollingInterval);
-                        finalizePairing(deviceId, checkRecord);
-                    }
-                } catch (err) {
-                    // Si el registro ya fue borrado o hay error, paramos polling
-                    if (err.status === 404) clearInterval(pollingInterval);
-                    console.warn("Error en polling:", err);
-                }
-            }, 5000);
-
-        } catch (err) {
-            console.error("Error al crear registro de dispositivo:", err);
-            // Mostrar mensaje de error en la UI de ser posible
-            pairingCodeDisplay.textContent = "ERROR";
-            pairingCodeDisplay.style.color = "red";
-        }
-
+    const groupId = device.group || localStorage.getItem('pwa_group_id');
+    if (!groupId) {
+        console.warn('[PWA] No groupId found. Cannot load content.');
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
         return;
     }
 
-    // --- DISPOSITIVO YA REGISTRADO ---
-    try {
-        const device = await pb.collection('devices').getOne(deviceId);
-        if (device.is_registered) {
-            startContent(device);
-            subscribeToDeviceChanges(deviceId);
-        } else {
-            // Si por alguna razón fue desvinculado desde el dashboard (is_registered = false)
-            console.log("Dispositivo marcado como no registrado en el servidor.");
-            localStorage.removeItem('pwa_device_id');
-            checkDevicePairing();
-        }
-    } catch (err) {
-        // MANEJO CRÍTICO: No borrar ID si es error de red (offline)
-        if (err.status === 404) {
-            console.warn("Dispositivo eliminado del servidor (404), solicitando nueva vinculación.");
-            localStorage.removeItem('pwa_device_id');
-            localStorage.removeItem('pwa_group_id');
-            checkDevicePairing();
-        } else {
-            // Error de conexión u otro: Intentar arrancar con lo que tenemos en caché
-            console.log("Error de conexión al verificar dispositivo. Intentando modo offline...");
-            startContent({ id: deviceId, group: groupId });
-        }
+    await updateContentFromConfig(groupId);
+
+    // Only subscribe/poll if online
+    if (navigator.onLine) {
+        subscribeToConfigChanges(groupId);
+    }
+
+    // Polling every 60s while online
+    setInterval(() => {
+        if (navigator.onLine) updateContentFromConfig(groupId);
+    }, 60000);
+
+    // Restore sync when internet comes back (only register once)
+    if (!window._onlineListenerAdded) {
+        window._onlineListenerAdded = true;
+        window.addEventListener('online', () => {
+            console.log('[PWA] Internet restored, syncing...');
+            const gId = localStorage.getItem('pwa_group_id');
+            if (gId) {
+                updateContentFromConfig(gId);
+                subscribeToConfigChanges(gId);
+            }
+        });
     }
 }
 
+// --- Pairing Screen ---
+function showPairingScreen(code) {
+    pairingCodeDisplay.textContent = code;
+    pairingOverlay.classList.remove('hidden');
+    loadingOverlay.classList.add('hidden');
+    video.classList.add('hidden');
+    image.classList.add('hidden');
+    iframe.classList.remove('visible');
+    if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
+}
+
+// --- Finalize Pairing ---
 function finalizePairing(deviceId, record) {
-    if (localStorage.getItem('pwa_device_id')) return; // Ya finalizado
-
-    console.log("¡Vinculación confirmada!");
+    if (localStorage.getItem('pwa_device_id')) return; // Already done
+    console.log('[PWA] Pairing confirmed!');
     localStorage.setItem('pwa_device_id', deviceId);
-    if (record.group) {
-        localStorage.setItem('pwa_group_id', record.group);
-    }
-
-    try {
-        pb.collection('devices').unsubscribe(deviceId);
-    } catch (e) { }
-
+    if (record.group) localStorage.setItem('pwa_group_id', record.group);
+    try { pb.collection('devices').unsubscribe(deviceId); } catch (e) {}
     startContent(record);
     subscribeToDeviceChanges(deviceId);
 }
 
+// --- Watch for remote unpairing ---
 function subscribeToDeviceChanges(deviceId) {
-    // Escuchar cambios para saber si nos desvinculan
     pb.collection('devices').subscribe(deviceId, (e) => {
         if (e.action === 'delete' || (e.action === 'update' && !e.record.is_registered)) {
-            console.log("El dispositivo ha sido desvinculado remotamente.");
+            console.log('[PWA] Device remotely unpaired.');
             localStorage.removeItem('pwa_device_id');
             localStorage.removeItem('pwa_group_id');
-
-            // Limpiar todo y volver a pantalla de vinculación
+            localStorage.removeItem('pwa_last_config');
+            localStorage.removeItem('pwa_last_playlist');
             video.pause();
             video.classList.add('hidden');
             image.classList.add('hidden');
             iframe.src = 'about:blank';
             iframe.classList.remove('visible');
             overlay.classList.remove('hidden');
-
-            // Evitar duplicar suscripciones
-            try { pb.collection('devices').unsubscribe(deviceId); } catch (ex) { }
-
+            try { pb.collection('devices').unsubscribe(deviceId); } catch (ex) {}
             checkDevicePairing();
         }
     }).catch(err => {
-        if (err.isAbort) return;
-        console.info("Realtime device tracking unavailable. Status will be checked on reload.");
+        if (!err.isAbort) console.info('[PWA] Realtime device tracking unavailable.');
     });
 }
 
-// Initialize
+// --- Interaction handler (for video_interactive) ---
+const handleInteraction = () => {
+    if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
+    if (currentConfig.content_type !== 'video_interactive') return;
+
+    console.log('[PWA] Interaction detected.');
+    iframe.src = currentConfig.redirect_url;
+    iframe.classList.add('visible');
+    video.classList.add('hidden');
+    overlay.classList.add('hidden');
+    if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
+};
+app.addEventListener('click', handleInteraction);
+app.addEventListener('touchstart', handleInteraction, { passive: true });
+
+// --- Main Entry Point ---
+async function checkDevicePairing() {
+    let deviceId = localStorage.getItem('pwa_device_id');
+    let groupId = localStorage.getItem('pwa_group_id');
+
+    // No device ID → start pairing flow
+    if (!deviceId) {
+        // But first, check if we can reach the server
+        if (!navigator.onLine) {
+            // Offline and no device ID → nothing we can do
+            loadingOverlay.classList.add('hidden');
+            pairingOverlay.classList.remove('hidden');
+            pairingCodeDisplay.textContent = 'Sin conexión';
+            return;
+        }
+
+        const code = generatePairingCode();
+        console.log('[PWA] Starting pairing. Code:', code);
+
+        try {
+            const record = await pb.collection('devices').create({ pairing_code: code, is_registered: false });
+            deviceId = record.id;
+            showPairingScreen(code);
+
+            // Real-time pairing listener
+            pb.collection('devices').subscribe(deviceId, (e) => {
+                if (e.record.is_registered) finalizePairing(deviceId, e.record);
+            });
+
+            // Polling fallback
+            const poll = setInterval(async () => {
+                try {
+                    const r = await pb.collection('devices').getOne(deviceId);
+                    if (r.is_registered) { clearInterval(poll); finalizePairing(deviceId, r); }
+                } catch (err) {
+                    if (err.status === 404) clearInterval(poll);
+                }
+            }, 5000);
+        } catch (err) {
+            console.error('[PWA] Failed to create device:', err);
+            pairingCodeDisplay.textContent = 'ERROR';
+            pairingCodeDisplay.style.color = 'red';
+        }
+        return;
+    }
+
+    // Device ID exists → verify with server
+    try {
+        const device = await pb.collection('devices').getOne(deviceId);
+        if (device.is_registered) {
+            startContent(device);
+            subscribeToDeviceChanges(deviceId);
+        } else {
+            // Server says not registered → force re-pair
+            console.warn('[PWA] Device is_registered=false, re-pairing.');
+            localStorage.removeItem('pwa_device_id');
+            checkDevicePairing();
+        }
+    } catch (err) {
+        if (err.status === 404) {
+            // Device deleted from backend → need new pairing
+            console.warn('[PWA] Device not found (404), clearing and re-pairing.');
+            localStorage.removeItem('pwa_device_id');
+            localStorage.removeItem('pwa_group_id');
+            localStorage.removeItem('pwa_last_config');
+            localStorage.removeItem('pwa_last_playlist');
+            checkDevicePairing();
+        } else {
+            // Network error (offline) → load from local storage
+            console.warn('[PWA] Offline. Loading from cache. Error:', err.message || err);
+            startContent({ id: deviceId, group: groupId });
+        }
+    }
+}
+
+// --- Initialize ---
 document.addEventListener('DOMContentLoaded', () => {
     checkDevicePairing();
 });
