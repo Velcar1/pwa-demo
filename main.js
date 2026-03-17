@@ -8,6 +8,68 @@ let VIDEO_URL = '/video.mp4';
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
+// --- Media Cache Management ---
+const CACHE_NAME = 'l1nx-media-cache-v1';
+
+const mediaCache = new (class MediaCacheManager {
+    constructor() {
+        this.activeDownloads = 0;
+    }
+
+    updateUI() {
+        const syncStatus = document.getElementById('syncStatus');
+        if (!syncStatus) return;
+        if (this.activeDownloads > 0) {
+            syncStatus.classList.remove('hidden');
+            syncStatus.style.opacity = '1';
+        } else {
+            syncStatus.style.opacity = '0';
+            setTimeout(() => {
+                if (this.activeDownloads === 0) syncStatus.classList.add('hidden');
+            }, 500);
+        }
+    }
+
+    async getOrCacheMedia(url) {
+        if (!url || url.startsWith('blob:')) return url;
+
+        const cache = await caches.open(CACHE_NAME);
+        const cachedResponse = await cache.match(url);
+
+        if (cachedResponse) {
+            const blob = await cachedResponse.blob();
+            return URL.createObjectURL(blob);
+        }
+
+        this.activeDownloads++;
+        this.updateUI();
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Network response was not ok');
+            
+            const responseToCache = response.clone();
+            await cache.put(url, responseToCache);
+            
+            const blob = await response.blob();
+            return URL.createObjectURL(blob);
+        } catch (error) {
+            console.error(`[Cache] Failed to fetch and cache: ${url}`, error);
+            return url;
+        } finally {
+            this.activeDownloads--;
+            this.updateUI();
+        }
+    }
+
+    async preCachePlaylist(items) {
+        if (items.length === 0) return;
+        console.log(`[Cache] Pre-caching ${items.length} playlist items...`);
+        await Promise.all(items.map(item => this.getOrCacheMedia(item.full_url)));
+        console.log(`[Cache] Pre-caching complete.`);
+    }
+})();
+
 // DOM Elements
 const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
@@ -96,8 +158,14 @@ async function fetchConfig(groupId) {
                         full_url: pb.files.getURL(item.expand.media, item.expand.media.file)
                     }));
                     console.log('Playlist items fetched:', playlistItems);
+                    
+                    // Trigger background pre-caching
+                    mediaCache.preCachePlaylist(playlistItems);
                 } else {
                     playlistItems = [];
+                    // Pre-cache single media if applicable
+                    if (recordToUse.video_full_url) mediaCache.getOrCacheMedia(recordToUse.video_full_url);
+                    if (recordToUse.image_full_url) mediaCache.getOrCacheMedia(recordToUse.image_full_url);
                 }
 
                 return recordToUse;
@@ -200,7 +268,7 @@ async function updateContentFromConfig(groupId) {
     }
 }
 
-function renderContent(config) {
+async function renderContent(config) {
     const type = config.content_type || 'video_interactive';
     console.log("[PWA] Rendering content type:", type);
 
@@ -220,9 +288,12 @@ function renderContent(config) {
     } else if (type === 'video_interactive' || type === 'video_only') {
         const source = video.querySelector('source');
         if (source && config.video_full_url) {
-            console.log("[PWA] Setting video source:", config.video_full_url);
-            if (source.src !== config.video_full_url) {
-                source.src = config.video_full_url;
+            // Get cached version
+            const cachedUrl = await mediaCache.getOrCacheMedia(config.video_full_url);
+            
+            console.log("[PWA] Setting video source:", cachedUrl);
+            if (source.src !== cachedUrl) {
+                source.src = cachedUrl;
                 video.load();
             }
             video.loop = true; // Loop for single video mode
@@ -240,8 +311,9 @@ function renderContent(config) {
         }
     } else if (type === 'image_only') {
         if (config.image_full_url) {
-            console.log("[PWA] Rendering image:", config.image_full_url);
-            image.src = config.image_full_url;
+            const cachedUrl = await mediaCache.getOrCacheMedia(config.image_full_url);
+            console.log("[PWA] Rendering image:", cachedUrl);
+            image.src = cachedUrl;
             image.classList.remove('hidden');
         }
     } else if (type === 'web_only') {
@@ -255,13 +327,16 @@ function renderContent(config) {
     }
 }
 
-function renderPlaylistItem() {
+async function renderPlaylistItem() {
     if (playlistItems.length === 0) {
         console.warn('Playlist is empty');
         return;
     }
 
     const item = playlistItems[currentPlaylistItemIndex];
+    
+    // Get cached version
+    const cachedUrl = await mediaCache.getOrCacheMedia(item.full_url);
     const isVideo = item.full_url.toLowerCase().endsWith('.mp4');
 
     // Hide previous
@@ -271,8 +346,8 @@ function renderPlaylistItem() {
 
     if (isVideo) {
         const source = video.querySelector('source');
-        if (source && source.src !== item.full_url) {
-            source.src = item.full_url;
+        if (source && source.src !== cachedUrl) {
+            source.src = cachedUrl;
             video.load();
         }
         video.loop = false; // Don't loop in playlist mode
@@ -284,7 +359,7 @@ function renderPlaylistItem() {
             nextPlaylistItem(); // Skip on error
         });
     } else {
-        image.src = item.full_url;
+        image.src = cachedUrl;
         image.classList.remove('hidden');
         const duration = (item.duration || 5) * 1000;
         playlistTimeout = setTimeout(nextPlaylistItem, duration);
