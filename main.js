@@ -133,6 +133,9 @@ async function fetchConfig(groupId) {
             if (recordToUse) {
                 console.log('Active Config determined:', recordToUse);
                 currentConfig = recordToUse;
+                
+                // Persist current config metadata
+                localStorage.setItem('pwa_last_config', JSON.stringify(recordToUse));
 
                 // Pre-calculate URLs if not a playlist
                 if (recordToUse.content_type !== 'playlist' && recordToUse.expand && recordToUse.expand.media) {
@@ -159,10 +162,14 @@ async function fetchConfig(groupId) {
                     }));
                     console.log('Playlist items fetched:', playlistItems);
                     
+                    // Persist playlist items metadata
+                    localStorage.setItem('pwa_last_playlist', JSON.stringify(playlistItems));
+                    
                     // Trigger background pre-caching
                     mediaCache.preCachePlaylist(playlistItems);
                 } else {
                     playlistItems = [];
+                    localStorage.removeItem('pwa_last_playlist');
                     // Pre-cache single media if applicable
                     if (recordToUse.video_full_url) mediaCache.getOrCacheMedia(recordToUse.video_full_url);
                     if (recordToUse.image_full_url) mediaCache.getOrCacheMedia(recordToUse.image_full_url);
@@ -172,8 +179,23 @@ async function fetchConfig(groupId) {
             }
         }
     } catch (error) {
-        console.warn('Failed to fetch from PocketBase, using fallbacks:', error);
+        console.warn('Failed to fetch from PocketBase, checking local storage:', error);
     }
+
+    // FALLBACK: Load from localStorage if offline
+    const savedConfig = localStorage.getItem('pwa_last_config');
+    if (savedConfig) {
+        console.log('[Cache] Loading last successful config from localStorage');
+        currentConfig = JSON.parse(savedConfig);
+        
+        const savedPlaylist = localStorage.getItem('pwa_last_playlist');
+        if (savedPlaylist) {
+            playlistItems = JSON.parse(savedPlaylist);
+        }
+        
+        return currentConfig;
+    }
+
     return null;
 }
 
@@ -226,15 +248,13 @@ async function startContent(device) {
 
     const groupId = device.group || localStorage.getItem('pwa_group_id');
 
-    // Initial fetch
+    // Try to load initial content (works online and pulls from localStorage if offline)
     await updateContentFromConfig(groupId);
 
-    // Subscribe to future changes in pwa_config for this group
-    if (groupId) {
+    // Subscribe to future changes in pwa_config for this group (only if online)
+    if (groupId && navigator.onLine) {
         subscribeToConfigChanges(groupId);
         
-        // Polling fallback for config updates
-        // If Realtime is unstable, this ensures content still updates
         const updateInterval = setInterval(() => {
             if (navigator.onLine) {
                 console.log("Checking for content updates (scheduled check)...");
@@ -242,6 +262,15 @@ async function startContent(device) {
             }
         }, 60000); // Check every 60s
     }
+    
+    // Add online listener to resume sync/realtime when connection returns
+    window.addEventListener('online', () => {
+        console.log("Connection restored, resuming sync...");
+        if (groupId) {
+            updateContentFromConfig(groupId);
+            subscribeToConfigChanges(groupId);
+        }
+    });
 }
 
 async function updateContentFromConfig(groupId) {
