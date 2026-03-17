@@ -217,7 +217,8 @@ function showPairingScreen(code) {
 }
 
 async function startContent(device) {
-    console.log("¡Dispositivo vinculado!", device ? device.name : "Local");
+    if (!device) return;
+    console.log("Iniciando contenido para dispositivo:", device.id);
 
     pairingOverlay.classList.add('hidden');
     loadingOverlay.classList.remove('hidden');
@@ -229,14 +230,18 @@ async function startContent(device) {
     await updateContentFromConfig(groupId);
 
     // Subscribe to future changes in pwa_config for this group
-    subscribeToConfigChanges(groupId);
-
-    // Polling fallback for config updates
-    // If Realtime is unstable, this ensures content still updates
-    setInterval(() => {
-        console.log("Checking for content updates (scheduled check)...");
-        updateContentFromConfig(groupId);
-    }, 45000); // Check every 45s as safety net
+    if (groupId) {
+        subscribeToConfigChanges(groupId);
+        
+        // Polling fallback for config updates
+        // If Realtime is unstable, this ensures content still updates
+        const updateInterval = setInterval(() => {
+            if (navigator.onLine) {
+                console.log("Checking for content updates (scheduled check)...");
+                updateContentFromConfig(groupId);
+            }
+        }, 60000); // Check every 60s
+    }
 }
 
 async function updateContentFromConfig(groupId) {
@@ -451,14 +456,22 @@ async function checkDevicePairing() {
             subscribeToDeviceChanges(deviceId);
         } else {
             // Si por alguna razón fue desvinculado desde el dashboard (is_registered = false)
+            console.log("Dispositivo marcado como no registrado en el servidor.");
             localStorage.removeItem('pwa_device_id');
             checkDevicePairing();
         }
     } catch (err) {
-        // Manejar error (ej: si el registro fue borrado en PocketBase)
-        console.warn("Dispositivo no encontrado o error de conexión, solicitando nueva vinculación.", err);
-        localStorage.removeItem('pwa_device_id');
-        checkDevicePairing();
+        // MANEJO CRÍTICO: No borrar ID si es error de red (offline)
+        if (err.status === 404) {
+            console.warn("Dispositivo eliminado del servidor (404), solicitando nueva vinculación.");
+            localStorage.removeItem('pwa_device_id');
+            localStorage.removeItem('pwa_group_id');
+            checkDevicePairing();
+        } else {
+            // Error de conexión u otro: Intentar arrancar con lo que tenemos en caché
+            console.log("Error de conexión al verificar dispositivo. Intentando modo offline...");
+            startContent({ id: deviceId, group: groupId });
+        }
     }
 }
 
