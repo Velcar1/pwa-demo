@@ -362,7 +362,7 @@ function finalizePairing(deviceId, record) {
     subscribeToDeviceChanges(deviceId);
 }
 
-// --- Watch for remote unpairing ---
+// --- Watch for remote unpairing or group changes ---
 function subscribeToDeviceChanges(deviceId) {
     pb.collection('devices').subscribe(deviceId, (e) => {
         if (e.action === 'delete' || (e.action === 'update' && !e.record.is_registered)) {
@@ -379,6 +379,33 @@ function subscribeToDeviceChanges(deviceId) {
             overlay.classList.remove('hidden');
             try { pb.collection('devices').unsubscribe(deviceId); } catch (ex) {}
             checkDevicePairing();
+        } else if (e.action === 'update' && e.record.is_registered) {
+            const currentGroupId = localStorage.getItem('pwa_group_id');
+            const newGroupId = e.record.group;
+
+            if (newGroupId && newGroupId !== currentGroupId) {
+                console.log(`[PWA] Group changed from ${currentGroupId} to ${newGroupId}. Reloading content...`);
+
+                // Clear stale cached config so we don't show old content
+                localStorage.setItem('pwa_group_id', newGroupId);
+                localStorage.removeItem('pwa_last_config');
+                localStorage.removeItem('pwa_last_playlist');
+
+                // Stop current playback
+                video.pause();
+                if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
+                
+                // Unsubscribe old config subscription and resubscribe for new group
+                try { pb.collection('pwa_config').unsubscribe(); } catch (ex) {}
+
+                // Show loading while we fetch new group's content
+                loadingOverlay.classList.remove('hidden');
+                loadingOverlay.style.opacity = '1';
+                
+                updateContentFromConfig(newGroupId).then(() => {
+                    subscribeToConfigChanges(newGroupId);
+                });
+            }
         }
     }).catch(err => {
         if (!err.isAbort) console.info('[PWA] Realtime device tracking unavailable.');
