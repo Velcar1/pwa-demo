@@ -306,7 +306,8 @@ async function startContent(device) {
     loadingOverlay.classList.remove('hidden');
     loadingOverlay.style.opacity = '1';
 
-    const groupId = device.group || localStorage.getItem('pwa_group_id');
+    const deviceId = device.id;
+    let groupId = device.group || localStorage.getItem('pwa_group_id');
     if (!groupId) {
         console.warn('[PWA] No groupId found. Cannot load content.');
         loadingOverlay.style.opacity = '0';
@@ -316,14 +317,71 @@ async function startContent(device) {
 
     await updateContentFromConfig(groupId);
 
-    // Only subscribe/poll if online
+    // Realtime subscriptions (best-effort, may not work over Cloudflare tunnels)
     if (navigator.onLine) {
         subscribeToConfigChanges(groupId);
+        subscribeToDeviceChanges(deviceId);
     }
 
-    // Polling every 60s while online
+    // --- POLLING FALLBACK: Check for device status + group changes every 15s ---
+    // This is the primary detection mechanism when realtime is unavailable.
+    setInterval(async () => {
+        if (!navigator.onLine || !deviceId) return;
+        try {
+            const latestDevice = await pb.collection('devices').getOne(deviceId);
+
+            // --- Detect group change ---
+            const currentGroupId = localStorage.getItem('pwa_group_id');
+            if (latestDevice.group && latestDevice.group !== currentGroupId) {
+                console.log(`[PWA] Polling detected group change: ${currentGroupId} → ${latestDevice.group}`);
+                groupId = latestDevice.group;
+                localStorage.setItem('pwa_group_id', groupId);
+                localStorage.removeItem('pwa_last_config');
+                localStorage.removeItem('pwa_last_playlist');
+                video.pause();
+                if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
+                try { pb.collection('pwa_config').unsubscribe(); } catch (ex) {}
+                loadingOverlay.classList.remove('hidden');
+                loadingOverlay.style.opacity = '1';
+                await updateContentFromConfig(groupId);
+                subscribeToConfigChanges(groupId);
+                return;
+            }
+
+            // --- Detect unpairing ---
+            if (!latestDevice.is_registered) {
+                console.log('[PWA] Polling detected device unregistered. Re-pairing...');
+                localStorage.removeItem('pwa_device_id');
+                localStorage.removeItem('pwa_group_id');
+                localStorage.removeItem('pwa_last_config');
+                localStorage.removeItem('pwa_last_playlist');
+                video.pause();
+                video.classList.add('hidden');
+                image.classList.add('hidden');
+                iframe.src = 'about:blank';
+                iframe.classList.remove('visible');
+                checkDevicePairing();
+            }
+
+        } catch (err) {
+            if (err.status === 404) {
+                console.warn('[PWA] Polling: device deleted from server. Re-pairing...');
+                localStorage.removeItem('pwa_device_id');
+                localStorage.removeItem('pwa_group_id');
+                localStorage.removeItem('pwa_last_config');
+                localStorage.removeItem('pwa_last_playlist');
+                checkDevicePairing();
+            }
+            // Other errors (offline etc.) are silently ignored until next poll
+        }
+    }, 15000); // Poll every 15 seconds
+
+    // Also poll config changes every 60s as a fallback
     setInterval(() => {
-        if (navigator.onLine) updateContentFromConfig(groupId);
+        if (navigator.onLine) {
+            const gId = localStorage.getItem('pwa_group_id');
+            if (gId) updateContentFromConfig(gId);
+        }
     }, 60000);
 
     // Restore sync when internet comes back (only register once)
