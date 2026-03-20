@@ -120,33 +120,27 @@ async function fetchConfig(groupId) {
             full_url: pb.files.getURL(item.expand.media, item.expand.media.file)
         }));
         savePlaylist(mapped);
-        playlistItems = mapped;
-        
-        // Pre-warm cache in background (service worker will cache automatically on normal fetch)
-        preWarmCache(mapped.map(i => i.full_url));
+        recordToUse._playlistItems = mapped;
     } else {
-        playlistItems = [];
-        // Pre-warm single media
-        const urls = [recordToUse.video_full_url, recordToUse.image_full_url].filter(Boolean);
-        preWarmCache(urls);
+        recordToUse._playlistItems = [];
     }
 
     saveConfig(recordToUse);
     return recordToUse;
 }
 
-// Pre-warm cache by fetching URLs silently in the background
-// The service worker will intercept these fetches and cache them automatically
-function preWarmCache(urls) {
+// Pre-download media fully into browser cache before rendering.
+// Returns a Promise that resolves once all URLs are cached.
+async function preDownloadMedia(urls) {
     if (!urls || urls.length === 0) return;
-    showSync('⬇ Sincronizando...');
-    let pending = urls.length;
-    urls.forEach(url => {
-        fetch(url, { mode: 'no-cors' }).catch(() => {}).finally(() => {
-            pending--;
-            if (pending <= 0) hideSync();
-        });
-    });
+    showSync('⬇ Descargando contenido...');
+    try {
+        await Promise.all(urls.map(url =>
+            fetch(url).then(r => r.blob()).catch(() => {})
+        ));
+    } finally {
+        hideSync();
+    }
 }
 
 // --- Load Config: Try network first, fall back to localStorage ---
@@ -204,9 +198,13 @@ async function renderContent(config) {
             video.load();
             video.loop = true;
             video.onended = null;
-            video.classList.remove('hidden');
             if (type === 'video_interactive') overlay.classList.remove('hidden');
-            video.play().catch(e => console.warn('[PWA] Autoplay blocked:', e.message));
+            // Wait until enough is buffered to play smoothly
+            video.addEventListener('canplaythrough', function onReady() {
+                video.removeEventListener('canplaythrough', onReady);
+                video.classList.remove('hidden');
+                video.play().catch(e => console.warn('[PWA] Autoplay blocked:', e.message));
+            }, { once: true });
         } else {
             console.warn('[PWA] No video URL in config.');
         }
@@ -239,12 +237,22 @@ function renderPlaylistItem() {
         video.load();
         video.loop = false;
         video.onended = nextPlaylistItem;
-        video.play().then(() => {
+        // Show video only once buffered enough to play without lag
+        video.addEventListener('canplaythrough', function onReady() {
+            video.removeEventListener('canplaythrough', onReady);
             video.classList.remove('hidden');
-        }).catch(e => {
-            console.error('[PWA] Playlist video error:', e.message);
-            nextPlaylistItem();
-        });
+            video.play().catch(e => {
+                console.error('[PWA] Playlist video error:', e.message);
+                nextPlaylistItem();
+            });
+        }, { once: true });
+        // Timeout fallback: if canplaythrough doesn't fire (e.g. cache hit) just play
+        setTimeout(() => {
+            if (video.classList.contains('hidden') && video.src === item.full_url) {
+                video.classList.remove('hidden');
+                video.play().catch(() => nextPlaylistItem());
+            }
+        }, 3000);
     } else {
         image.src = item.full_url;
         image.classList.remove('hidden');
@@ -261,27 +269,62 @@ function nextPlaylistItem() {
 // --- Main content loader ---
 async function updateContentFromConfig(groupId) {
     console.log('[PWA] Loading config for group:', groupId);
+    const hadContent = !!currentConfig; // true if something is already playing
+
     try {
         const config = await loadConfig(groupId);
-        currentConfig = config;
-
-        // Hide loading overlay
-        loadingOverlay.style.opacity = '0';
-        setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
 
         if (!config) {
             console.warn('[PWA] No config available (online or offline).');
-            video.classList.add('hidden');
-            image.classList.add('hidden');
-            iframe.classList.remove('visible');
+            // Only blank the screen if nothing was playing before
+            if (!hadContent) {
+                loadingOverlay.style.opacity = '0';
+                setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
+            }
             return;
         }
 
-        renderContent(config);
-    } catch (err) {
-        console.error('[PWA] Fatal error loading config:', err);
+        // Collect all media URLs that need to be downloaded
+        const urlsToDownload = [];
+        if (config._playlistItems && config._playlistItems.length > 0) {
+            config._playlistItems.forEach(i => urlsToDownload.push(i.full_url));
+        } else {
+            if (config.video_full_url) urlsToDownload.push(config.video_full_url);
+            if (config.image_full_url) urlsToDownload.push(config.image_full_url);
+        }
+
+        if (urlsToDownload.length > 0) {
+            // If content is already playing, download silently in background
+            // while the old content keeps running. If first load, show spinner.
+            if (!hadContent) {
+                loadingOverlay.classList.remove('hidden');
+                loadingOverlay.style.opacity = '1';
+            }
+            console.log('[PWA] Pre-downloading', urlsToDownload.length, 'media file(s) before rendering...');
+            await preDownloadMedia(urlsToDownload);
+            console.log('[PWA] Download complete. Swapping content.');
+        }
+
+        // Apply playlist items to global state
+        if (config._playlistItems) {
+            playlistItems = config._playlistItems;
+            if (playlistItems.length > 0) savePlaylist(playlistItems);
+        }
+
+        currentConfig = config;
+
+        // Hide loading overlay and render
         loadingOverlay.style.opacity = '0';
         setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
+        renderContent(config);
+
+    } catch (err) {
+        console.error('[PWA] Fatal error loading config:', err);
+        // Don't blank screen if we already have content playing
+        if (!hadContent) {
+            loadingOverlay.style.opacity = '0';
+            setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
+        }
     }
 }
 
