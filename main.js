@@ -453,6 +453,30 @@ async function startContent(device) {
         if (gId) updateContentFromConfig(gId);
     }, 60000);
 
+    // ── Heartbeat: report online status every 10 minutes ──
+    const sendHeartbeat = async () => {
+        if (!navigator.onLine) return;
+        const gId = localStorage.getItem('pwa_group_id');
+        if (!deviceId || !gId) return;
+        try {
+            // Fetch the device to get the organization id
+            const dev = await pb.collection('devices').getOne(deviceId);
+            await pb.collection('device_heartbeats').create({
+                device: deviceId,
+                group: gId,
+                organization: dev.organization || null,
+                status: 'online',
+            });
+            console.log('[PWA] Heartbeat sent.');
+        } catch (err) {
+            console.warn('[PWA] Heartbeat failed:', err?.message);
+        }
+    };
+
+    // Send immediately on start, then every 10 minutes
+    sendHeartbeat();
+    setInterval(sendHeartbeat, 10 * 60 * 1000);
+
     // ── Restore on reconnect ──
     if (!window._onlineListenerAdded) {
         window._onlineListenerAdded = true;
