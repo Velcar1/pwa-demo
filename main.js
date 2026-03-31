@@ -154,7 +154,7 @@ async function fetchConfig(groupId) {
         const url = pb.files.getURL(m, m.file);
         if (rec.content_type === 'video_interactive' || rec.content_type === 'video_only') {
             rec.video_full_url = url;
-        } else if (rec.content_type === 'image_only') {
+        } else if (rec.content_type === 'image_only' || rec.content_type === 'html_only') {
             rec.image_full_url = url;
         }
     }
@@ -212,6 +212,8 @@ function stopCurrentContent() {
     video.classList.add('hidden');
     image.classList.add('hidden');
     iframe.classList.remove('visible');
+    iframe.src = 'about:blank';
+    iframe.removeAttribute('srcdoc');
     overlay.classList.add('hidden');
     video.pause();
     video.src = '';
@@ -266,6 +268,17 @@ function renderContent(config) {
         // Fallback for web_only or generic URL
         if (iframe.src !== config.redirect_url) iframe.src = config.redirect_url;
         iframe.classList.add('visible');
+    } else if (type === 'html_only') {
+        if (!config.image_full_url) return; // Note: image_full_url is used for media file URL
+        
+        // Fetch HTML content to avoid "Content-Disposition: attachment" download
+        fetch(config.image_full_url)
+            .then(res => res.text())
+            .then(html => {
+                iframe.srcdoc = html;
+                iframe.classList.add('visible');
+            })
+            .catch(err => console.error('[PWA] Failed to load HTML:', err));
     }
 }
 
@@ -277,6 +290,7 @@ function renderPlaylistItem() {
 
     video.classList.add('hidden');
     image.classList.add('hidden');
+    iframe.classList.remove('visible');
     video.pause();
 
     if (isVideo) {
@@ -288,6 +302,18 @@ function renderPlaylistItem() {
             console.error('[PWA] Playlist video error:', e.message);
             setTimeout(nextPlaylistItem, 1000);
         });
+    } else if (item.full_url.toLowerCase().endsWith('.html')) {
+        fetch(item.full_url)
+            .then(res => res.text())
+            .then(html => {
+                iframe.srcdoc = html;
+                iframe.classList.add('visible');
+                playlistTimeout = setTimeout(nextPlaylistItem, (item.duration || 5) * 1000);
+            })
+            .catch(err => {
+                console.error('[PWA] Playlist HTML load error:', err);
+                setTimeout(nextPlaylistItem, 1000);
+            });
     } else {
         image.src = item.full_url;
         image.classList.remove('hidden');
