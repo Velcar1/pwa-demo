@@ -242,8 +242,28 @@ function renderContent(config) {
         image.src = config.image_full_url;
         image.classList.remove('hidden');
 
-    } else if (type === 'web_only') {
+    } else if (type === 'web_only' || type === 'url_only') {
         if (!config.redirect_url) return;
+        
+        if (type === 'url_only') {
+            const url = config.redirect_url.toLowerCase();
+            const isVid = /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
+            const isImg = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(url);
+            
+            if (isVid) {
+                video.src = config.redirect_url;
+                video.loop = true;
+                video.classList.remove('hidden');
+                video.play().catch(e => console.warn('[PWA] URL Video Autoplay blocked:', e.message));
+                return;
+            } else if (isImg) {
+                image.src = config.redirect_url;
+                image.classList.remove('hidden');
+                return;
+            }
+        }
+        
+        // Fallback for web_only or generic URL
         if (iframe.src !== config.redirect_url) iframe.src = config.redirect_url;
         iframe.classList.add('visible');
     }
