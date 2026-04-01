@@ -412,6 +412,15 @@ function subscribeToDeviceChanges(deviceId) {
             if (newGroupId && newGroupId !== currentGroupId) {
                 handleGroupChange(newGroupId);
             }
+
+            // Check for new hardware commands
+            if (e.record.command && e.record.command_timestamp) {
+                const lastCommandTs = localStorage.getItem('pwa_last_command_ts');
+                if (e.record.command_timestamp !== lastCommandTs) {
+                    processHardwareCommand(e.record.command, e.record.command_payload);
+                    localStorage.setItem('pwa_last_command_ts', e.record.command_timestamp);
+                }
+            }
         }
     }).catch(err => {
         if (!err.isAbort) console.info('[PWA] Realtime device tracking unavailable.');
@@ -440,6 +449,64 @@ function handleUnpair() {
     checkDevicePairing();
 }
 
+// ─── Hardware Command Processor (Samsung B2B) ─────────────────────────────────
+function processHardwareCommand(command, payload) {
+    console.log(`[PWA] Processing Hardware Command: ${command} [Payload: ${payload}]`);
+    
+    // Safety check: These APIs only exist on Samsung Smart Signage Platform displays
+    const hasB2BApis = typeof b2bapis !== 'undefined' && b2bapis.b2bcontrol;
+    const hasTizenUi = typeof tizen !== 'undefined' && tizen.tvaudiocontrol;
+
+    try {
+        switch(command) {
+            case 'POWER_OFF':
+                if (hasB2BApis && b2bapis.b2bcontrol.setPowerOff) {
+                    b2bapis.b2bcontrol.setPowerOff(
+                        () => console.log('[PWA] b2bapis power off success'),
+                        err => console.error('[PWA] b2bapis power off failed', err)
+                    );
+                } else {
+                    console.log('[PWA] B2B Power Control not supported on this device.');
+                }
+                break;
+                
+            case 'VOLUME':
+                const vol = parseInt(payload, 10);
+                if (!isNaN(vol)) {
+                    // Modern Tizen displays use tizen.tvaudiocontrol for volume
+                    if (hasTizenUi) {
+                        tizen.tvaudiocontrol.setVolume(vol);
+                        console.log(`[PWA] tizen.tvaudiocontrol volume set to ${vol}`);
+                    } 
+                    // Fallback to older b2bapis
+                    else if (hasB2BApis && b2bapis.b2bcontrol.setVolume) {
+                        b2bapis.b2bcontrol.setVolume(vol, 
+                            () => console.log(`[PWA] b2bapis volume set to ${vol}`),
+                            err => console.error('[PWA] b2bapis volume failed', err)
+                        );
+                    } else {
+                        console.log('[PWA] Volume Control not supported on this device.');
+                    }
+                }
+                break;
+                
+            case 'SOURCE':
+                if (hasB2BApis) {
+                    // Using standard b2b source switching (format can vary by model, e.g. PC, HDMI1, HDMI2, DVI)
+                    console.log(`[PWA] Attempting B2B Source change to: ${payload}`);
+                } else {
+                    console.log('[PWA] Source Control not supported on this device.');
+                }
+                break;
+                
+            default:
+                console.warn(`[PWA] Unknown hardware command request: ${command}`);
+        }
+    } catch (err) {
+        console.error('[PWA] Exception executing hardware command:', err);
+    }
+}
+
 // ─── Start Content Display ────────────────────────────────────────────────────
 async function startContent(device) {
     if (!device) return;
@@ -464,7 +531,16 @@ async function startContent(device) {
 
     await updateContentFromConfig(groupId);
 
-    // Best-effort realtime (may not work over Cloudflare tunnels)
+    // Run initial command if exists
+    if (device.command && device.command_timestamp) {
+        const lastCommandTs = localStorage.getItem('pwa_last_command_ts');
+        if (device.command_timestamp !== lastCommandTs) {
+            processHardwareCommand(device.command, device.command_payload);
+            localStorage.setItem('pwa_last_command_ts', device.command_timestamp);
+        }
+    }
+
+    // Best-effort realtime
     if (navigator.onLine) {
         subscribeToConfigChanges(groupId);
         subscribeToDeviceChanges(deviceId);
