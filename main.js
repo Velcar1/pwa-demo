@@ -149,7 +149,7 @@ async function fetchConfig(groupId) {
     if (!rec) return null;
 
     // Build media URL
-    if (rec.content_type !== 'playlist' && rec.expand?.media) {
+    if (rec.content_type !== 'playlist' && rec.expand && rec.expand.media) {
         const m = rec.expand.media;
         const url = pb.files.getURL(m, m.file);
         if (rec.content_type === 'video_interactive' || rec.content_type === 'video_only') {
@@ -186,7 +186,7 @@ async function loadConfig(groupId) {
         if (config) {
             // Persist metadata (without _playlistItems)
             saveConfig(config);
-            if (config._playlistItems?.length > 0) savePlaylist(config._playlistItems);
+            if (config._playlistItems && config._playlistItems.length > 0) savePlaylist(config._playlistItems);
             console.log('[PWA] Config loaded from network.');
             return config;
         }
@@ -351,7 +351,7 @@ async function updateContentFromConfig(groupId) {
 
         // Collect all media URLs to pre-cache
         const urlsToCache = [];
-        if (config._playlistItems?.length > 0) {
+        if (config._playlistItems && config._playlistItems.length > 0) {
             config._playlistItems.forEach(i => urlsToCache.push(i.full_url));
         } else {
             if (config.video_full_url) urlsToCache.push(config.video_full_url);
@@ -591,7 +591,7 @@ async function startContent(device) {
             });
             console.log('[PWA] Heartbeat sent.');
         } catch (err) {
-            console.warn('[PWA] Heartbeat failed:', err?.message);
+            console.warn('[PWA] Heartbeat failed:', err && err.message ? err.message : err);
         }
     };
 
