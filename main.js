@@ -8,8 +8,28 @@ const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
 
+// ─── Samsung / Tizen API Loader (only on real hardware) ──────────────────────
+function loadSamsungAPIs() {
+    // $B2BAPIS and $WEBAPIS are environment variables only resolved by Tizen
+    // Attempting to load them on standard browsers causes fatal SyntaxErrors
+    var isTizen = (typeof tizen !== 'undefined') ||
+                  (navigator.userAgent && navigator.userAgent.indexOf('SMART-TV') !== -1) ||
+                  (navigator.userAgent && navigator.userAgent.indexOf('Tizen') !== -1);
+    if (!isTizen) {
+        console.log('[Samsung] Not on Tizen hardware. Skipping Samsung API scripts.');
+        return;
+    }
+    var scripts = ['$B2BAPIS/b2bapis/b2bapis.js', '$WEBAPIS/webapis/webapis.js'];
+    scripts.forEach(function(src) {
+        var s = document.createElement('script');
+        s.src = src;
+        s.onerror = function() { console.warn('[Samsung] Could not load: ' + src); };
+        document.head.appendChild(s);
+    });
+}
+loadSamsungAPIs();
 
-// ─── DOM Elements ─────────────────────────────────────────────────────────────
+
 const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
 const image = document.getElementById('displayImage');
@@ -625,7 +645,7 @@ function finalizePairing(deviceId, record) {
     console.log('[PWA] Pairing confirmed!');
     localStorage.setItem('pwa_device_id', deviceId);
     if (record.group) localStorage.setItem('pwa_group_id', record.group);
-    try { pb.collection('devices').unsubscribe(deviceId); } catch { }
+    try { pb.collection('devices').unsubscribe(deviceId); } catch (err) { }
     startContent(record);
 }
 
@@ -648,8 +668,11 @@ async function checkDevicePairing() {
     const deviceId = localStorage.getItem('pwa_device_id');
     const groupId = localStorage.getItem('pwa_group_id');
 
+    console.log('[PWA TRACE] checkDevicePairing start. deviceId:', deviceId, 'groupId:', groupId);
+
     // No device ID → start pairing flow
     if (!deviceId) {
+        console.log('[PWA TRACE] No deviceId. Checking online status:', navigator.onLine);
         if (!navigator.onLine) {
             loadingOverlay.classList.add('hidden');
             pairingOverlay.classList.remove('hidden');
@@ -658,12 +681,23 @@ async function checkDevicePairing() {
         }
 
         const code = generatePairingCode();
-        console.log('[PWA] Starting pairing. Code:', code);
+        console.log('[PWA TRACE] Generated code:', code, '- About to call PocketBase create...');
+
+        // Timeout guard: if PocketBase doesn't respond in 10s, show pairing screen anyway
+        var pairingTimeout = setTimeout(function() {
+            console.warn('[PWA] Backend timeout. Showing pairing screen offline.');
+            loadingOverlay.classList.add('hidden');
+            pairingOverlay.classList.remove('hidden');
+            pairingCodeDisplay.textContent = 'Sin servidor';
+        }, 10000);
 
         try {
             const record = await pb.collection('devices').create({ pairing_code: code, is_registered: false });
+            console.log('[PWA TRACE] Device created OK. id:', record.id);
+            clearTimeout(pairingTimeout);
             const newDeviceId = record.id;
             showPairingScreen(code);
+            console.log('[PWA TRACE] showPairingScreen called.');
 
             // Realtime listener for pairing
             pb.collection('devices').subscribe(newDeviceId, (e) => {
@@ -716,6 +750,15 @@ async function checkDevicePairing() {
 }
 
 // ─── Initialize ───────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+console.log('[PWA TRACE] Script loaded. document.readyState:', document.readyState);
+if (document.readyState === 'loading') {
+    // DOM not ready yet, wait for it
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('[PWA TRACE] DOMContentLoaded fired.');
+        checkDevicePairing();
+    });
+} else {
+    // DOM already ready (legacy scripts load deferred, after DOM is parsed)
+    console.log('[PWA TRACE] DOM already ready. Calling checkDevicePairing now.');
     checkDevicePairing();
-});
+}
