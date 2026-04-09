@@ -1,7 +1,7 @@
 import PocketBase from 'pocketbase';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
-const PB_URL = import.meta.env.VITE_PB_URL || 'https://firm-ordinary-metres-complex.trycloudflare.com/';
+const PB_URL = import.meta.env.VITE_PB_URL || 'https://kodak-jade-stocks-icons.trycloudflare.com/';
 const MEDIA_CACHE_NAME = 'pwa-media-v1';
 
 const pb = new PocketBase(PB_URL);
@@ -15,21 +15,21 @@ if ('serviceWorker' in navigator) {
 }
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
-const app                = document.getElementById('app');
-const video              = document.getElementById('idleVideo');
-const image              = document.getElementById('displayImage');
-const iframe             = document.getElementById('contentFrame');
-const overlay            = document.getElementById('interactionOverlay');
-const loadingOverlay     = document.getElementById('loadingOverlay');
-const pairingOverlay     = document.getElementById('pairingOverlay');
+const app = document.getElementById('app');
+const video = document.getElementById('idleVideo');
+const image = document.getElementById('displayImage');
+const iframe = document.getElementById('contentFrame');
+const overlay = document.getElementById('interactionOverlay');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const pairingOverlay = document.getElementById('pairingOverlay');
 const pairingCodeDisplay = document.getElementById('pairingCodeDisplay');
 
 // ─── App State ────────────────────────────────────────────────────────────────
-let currentConfig           = null;
-let playlistItems           = [];
+let currentConfig = null;
+let playlistItems = [];
 let currentPlaylistItemIndex = 0;
-let playlistTimeout         = null;
-let isLoadingContent        = false; // prevents concurrent content loads
+let playlistTimeout = null;
+let isLoadingContent = false; // prevents concurrent content loads
 
 // ─── Sync Indicator ───────────────────────────────────────────────────────────
 function showSync(msg = '⬇ Descargando...') {
@@ -52,13 +52,13 @@ function saveConfig(config) {
     try {
         const { _playlistItems, ...rest } = config;
         localStorage.setItem('pwa_last_config', JSON.stringify(rest));
-    } catch (e) {}
+    } catch (e) { }
 }
 function getSavedConfig() {
     try { return JSON.parse(localStorage.getItem('pwa_last_config')); } catch { return null; }
 }
 function savePlaylist(items) {
-    try { localStorage.setItem('pwa_last_playlist', JSON.stringify(items)); } catch (e) {}
+    try { localStorage.setItem('pwa_last_playlist', JSON.stringify(items)); } catch (e) { }
 }
 function getSavedPlaylist() {
     try { return JSON.parse(localStorage.getItem('pwa_last_playlist')); } catch { return null; }
@@ -106,7 +106,7 @@ async function resolveMediaUrl(url) {
         const cache = await caches.open(MEDIA_CACHE_NAME);
         const cached = await cache.match(url);
         if (cached) return url; // Service worker will intercept and serve from cache
-    } catch {}
+    } catch { }
     return url;
 }
 
@@ -133,12 +133,12 @@ async function fetchConfig(groupId) {
     // Determine active record (scheduled or base)
     const now = new Date();
     let activeRecord = null;
-    let baseRecord   = null;
+    let baseRecord = null;
 
     for (const record of records) {
         if (record.is_schedule && record.schedule_start && record.schedule_end) {
             const start = new Date(record.schedule_start);
-            const end   = new Date(record.schedule_end);
+            const end = new Date(record.schedule_end);
             if (now >= start && now <= end) { activeRecord = record; break; }
         } else if (!record.is_schedule && !baseRecord) {
             baseRecord = record;
@@ -246,12 +246,12 @@ function renderContent(config) {
 
     } else if (type === 'web_only' || type === 'url_only') {
         if (!config.redirect_url) return;
-        
+
         if (type === 'url_only') {
             const url = config.redirect_url.toLowerCase();
             const isVid = /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
             const isImg = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(url);
-            
+
             if (isVid) {
                 video.src = config.redirect_url;
                 video.loop = true;
@@ -264,13 +264,13 @@ function renderContent(config) {
                 return;
             }
         }
-        
+
         // Fallback for web_only or generic URL
         if (iframe.src !== config.redirect_url) iframe.src = config.redirect_url;
         iframe.classList.add('visible');
     } else if (type === 'html_only') {
         if (!config.image_full_url) return; // Note: image_full_url is used for media file URL
-        
+
         // Fetch HTML content to avoid "Content-Disposition: attachment" download
         fetch(config.image_full_url)
             .then(res => res.text())
@@ -285,7 +285,7 @@ function renderContent(config) {
 function renderPlaylistItem() {
     if (playlistItems.length === 0) { console.warn('[PWA] Playlist is empty.'); return; }
 
-    const item    = playlistItems[currentPlaylistItemIndex];
+    const item = playlistItems[currentPlaylistItemIndex];
     const isVideo = /\.(mp4|webm|ogg)(\?|$)/i.test(item.full_url);
 
     video.classList.add('hidden');
@@ -408,7 +408,7 @@ function subscribeToDeviceChanges(deviceId) {
             handleUnpair();
         } else if (e.action === 'update' && e.record.is_registered) {
             const currentGroupId = localStorage.getItem('pwa_group_id');
-            const newGroupId     = e.record.group;
+            const newGroupId = e.record.group;
             if (newGroupId && newGroupId !== currentGroupId) {
                 handleGroupChange(newGroupId);
             }
@@ -433,7 +433,7 @@ function handleGroupChange(newGroupId) {
     localStorage.setItem('pwa_group_id', newGroupId);
     localStorage.removeItem('pwa_last_config');
     localStorage.removeItem('pwa_last_playlist');
-    try { pb.collection('pwa_config').unsubscribe(); } catch {}
+    try { pb.collection('pwa_config').unsubscribe(); } catch (err) { }
     updateContentFromConfig(newGroupId).then(() => subscribeToConfigChanges(newGroupId));
 }
 
@@ -452,13 +452,13 @@ function handleUnpair() {
 // ─── Hardware Command Processor (Samsung B2B) ─────────────────────────────────
 function processHardwareCommand(command, payload) {
     console.log(`[PWA] Processing Hardware Command: ${command} [Payload: ${payload}]`);
-    
+
     // Safety check: These APIs only exist on Samsung Smart Signage Platform displays
     const hasB2BApis = typeof b2bapis !== 'undefined' && b2bapis.b2bcontrol;
     const hasTizenUi = typeof tizen !== 'undefined' && tizen.tvaudiocontrol;
 
     try {
-        switch(command) {
+        switch (command) {
             case 'POWER_OFF':
                 if (hasB2BApis && b2bapis.b2bcontrol.setPowerOff) {
                     b2bapis.b2bcontrol.setPowerOff(
@@ -469,7 +469,7 @@ function processHardwareCommand(command, payload) {
                     console.log('[PWA] B2B Power Control not supported on this device.');
                 }
                 break;
-                
+
             case 'VOLUME':
                 const vol = parseInt(payload, 10);
                 if (!isNaN(vol)) {
@@ -477,10 +477,10 @@ function processHardwareCommand(command, payload) {
                     if (hasTizenUi) {
                         tizen.tvaudiocontrol.setVolume(vol);
                         console.log(`[PWA] tizen.tvaudiocontrol volume set to ${vol}`);
-                    } 
+                    }
                     // Fallback to older b2bapis
                     else if (hasB2BApis && b2bapis.b2bcontrol.setVolume) {
-                        b2bapis.b2bcontrol.setVolume(vol, 
+                        b2bapis.b2bcontrol.setVolume(vol,
                             () => console.log(`[PWA] b2bapis volume set to ${vol}`),
                             err => console.error('[PWA] b2bapis volume failed', err)
                         );
@@ -489,7 +489,7 @@ function processHardwareCommand(command, payload) {
                     }
                 }
                 break;
-                
+
             case 'SOURCE':
                 if (hasB2BApis) {
                     // Using standard b2b source switching (format can vary by model, e.g. PC, HDMI1, HDMI2, DVI)
@@ -498,7 +498,7 @@ function processHardwareCommand(command, payload) {
                     console.log('[PWA] Source Control not supported on this device.');
                 }
                 break;
-                
+
             default:
                 console.warn(`[PWA] Unknown hardware command request: ${command}`);
         }
@@ -520,7 +520,7 @@ async function startContent(device) {
     }
 
     const deviceId = device.id;
-    let groupId    = device.group || localStorage.getItem('pwa_group_id');
+    let groupId = device.group || localStorage.getItem('pwa_group_id');
 
     if (!groupId) {
         console.warn('[PWA] No groupId found.');
@@ -630,7 +630,7 @@ function finalizePairing(deviceId, record) {
     console.log('[PWA] Pairing confirmed!');
     localStorage.setItem('pwa_device_id', deviceId);
     if (record.group) localStorage.setItem('pwa_group_id', record.group);
-    try { pb.collection('devices').unsubscribe(deviceId); } catch {}
+    try { pb.collection('devices').unsubscribe(deviceId); } catch { }
     startContent(record);
 }
 
@@ -651,7 +651,7 @@ app.addEventListener('touchstart', handleInteraction, { passive: true });
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 async function checkDevicePairing() {
     const deviceId = localStorage.getItem('pwa_device_id');
-    const groupId  = localStorage.getItem('pwa_group_id');
+    const groupId = localStorage.getItem('pwa_group_id');
 
     // No device ID → start pairing flow
     if (!deviceId) {

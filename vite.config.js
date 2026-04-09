@@ -1,8 +1,13 @@
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import legacy from '@vitejs/plugin-legacy'
 
 export default defineConfig({
     plugins: [
+        legacy({
+            targets: ['chrome 56'],
+            additionalLegacyPolyfills: ['regenerator-runtime/runtime']
+        }),
         VitePWA({
             registerType: 'autoUpdate',
             // Include sw-media.js so it's copied to dist as-is (not processed)
