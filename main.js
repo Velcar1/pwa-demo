@@ -7,12 +7,7 @@ const MEDIA_CACHE_NAME = 'pwa-media-v1';
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
-// ─── Register Service Worker ──────────────────────────────────────────────────
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw-media.js')
-        .then(reg => console.log('[SW] Registered:', reg.scope))
-        .catch(err => console.warn('[SW] Registration failed:', err));
-}
+
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app = document.getElementById('app');
