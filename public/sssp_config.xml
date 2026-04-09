@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget>
+    <ver>1.0.0</ver>
+    <size>1</size>
+    <widgetname>Linx_CMS</widgetname>
+    <widgetpath>https://linx-l.netlify.app/</widgetpath>
+    <webtype>tizen</webtype>
+</widget>
