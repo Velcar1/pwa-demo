@@ -10,8 +10,9 @@ export default defineConfig({
         }),
         VitePWA({
             registerType: 'autoUpdate',
-            // Include sw-media.js so it's copied to dist as-is (not processed)
-            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'video.mp4', 'sw-media.js'],
+            injectRegister: null, // Disable automatic registration (crashes Chrome 56)
+            // Include assets to be copied to dist
+            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'video.mp4'],
             manifest: {
                 name: 'PWA Motorola Video Loop',
                 short_name: 'MotorolaPWA',
