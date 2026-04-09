@@ -55,13 +55,13 @@ function saveConfig(config) {
     } catch (e) { }
 }
 function getSavedConfig() {
-    try { return JSON.parse(localStorage.getItem('pwa_last_config')); } catch { return null; }
+    try { return JSON.parse(localStorage.getItem('pwa_last_config')); } catch (err) { return null; }
 }
 function savePlaylist(items) {
     try { localStorage.setItem('pwa_last_playlist', JSON.stringify(items)); } catch (e) { }
 }
 function getSavedPlaylist() {
-    try { return JSON.parse(localStorage.getItem('pwa_last_playlist')); } catch { return null; }
+    try { return JSON.parse(localStorage.getItem('pwa_last_playlist')); } catch (err) { return null; }
 }
 
 // ─── Media Cache ──────────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ async function preCacheMedia(urls) {
                 try {
                     const res = await fetch(url);
                     if (res.ok) await cache.put(url, res);
-                } catch { /* ignore - will retry next time */ }
+                } catch (err) { /* ignore - will retry next time */ }
             }
         }));
     } finally {
@@ -106,7 +106,7 @@ async function resolveMediaUrl(url) {
         const cache = await caches.open(MEDIA_CACHE_NAME);
         const cached = await cache.match(url);
         if (cached) return url; // Service worker will intercept and serve from cache
-    } catch { }
+    } catch (err) { }
     return url;
 }
 
