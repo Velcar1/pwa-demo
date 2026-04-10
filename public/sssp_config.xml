@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <widget>
-    <ver>1.0.0</ver>
-    <size>1</size>
-    <widgetname>Linx_CMS</widgetname>
-    <widgetpath>https://linx-l.netlify.app/</widgetpath>
-    <webtype>tizen</webtype>
+	<ver>4.409</ver>
+	<size>9999999</size>
+	<widgetname>sssp_dl</widgetname>
+	<webtype>tizen</webtype>
 </widget>
