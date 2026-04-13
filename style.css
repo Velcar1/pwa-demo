@@ -106,15 +106,17 @@ html {
 }
 
 #contentFrame {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
+  position: fixed;
+  top: -10px;
+  left: -10px;
+  width: calc(100vw + 20px);
+  height: calc(100vh + 20px);
+  margin: 0;
+  padding: 0;
   border: 0;
   border-width: 0;
   outline: none;
-  background-color: transparent;
+  background-color: #000;
   z-index: 5;
   display: none;
   /* Hidden initially */
