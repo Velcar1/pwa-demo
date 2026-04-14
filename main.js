@@ -18,7 +18,7 @@ if ('serviceWorker' in navigator) {
 const app                = document.getElementById('app');
 const video              = document.getElementById('idleVideo');
 const image              = document.getElementById('displayImage');
-const iframe             = document.getElementById('contentFrame');
+let iframe             = document.getElementById('contentFrame');
 const overlay            = document.getElementById('interactionOverlay');
 const loadingOverlay     = document.getElementById('loadingOverlay');
 const pairingOverlay     = document.getElementById('pairingOverlay');
@@ -30,6 +30,22 @@ let playlistItems           = [];
 let currentPlaylistItemIndex = 0;
 let playlistTimeout         = null;
 let isLoadingContent        = false; // prevents concurrent content loads
+
+// ─── DOM Helpers ──────────────────────────────────────────────────────────────
+// Always recreate the iframe instead of changing .src to avoid polluting window.history
+function setIframeContent(url, htmlContent = null) {
+    const newIframe = document.createElement('iframe');
+    newIframe.id = 'contentFrame';
+    newIframe.allow = "autoplay; fullscreen";
+    newIframe.frameBorder = "0";
+    if (htmlContent !== null) {
+        newIframe.srcdoc = htmlContent;
+    } else {
+        newIframe.src = url || 'about:blank';
+    }
+    iframe.parentNode.replaceChild(newIframe, iframe);
+    iframe = newIframe;
+}
 
 // ─── Sync Indicator ───────────────────────────────────────────────────────────
 function showSync(msg = '⬇ Descargando...') {
@@ -211,9 +227,8 @@ async function loadConfig(groupId) {
 function stopCurrentContent() {
     video.classList.add('hidden');
     image.classList.add('hidden');
+    setIframeContent('about:blank');
     iframe.classList.remove('visible');
-    iframe.src = 'about:blank';
-    iframe.removeAttribute('srcdoc');
     overlay.classList.add('hidden');
     video.pause();
     video.src = '';
@@ -266,7 +281,7 @@ function renderContent(config) {
         }
         
         // Fallback for web_only or generic URL
-        if (iframe.src !== config.redirect_url) iframe.src = config.redirect_url;
+        setIframeContent(config.redirect_url);
         iframe.classList.add('visible');
     } else if (type === 'html_only') {
         if (!config.image_full_url) return; // Note: image_full_url is used for media file URL
@@ -275,7 +290,7 @@ function renderContent(config) {
         fetch(config.image_full_url)
             .then(res => res.text())
             .then(html => {
-                iframe.srcdoc = html;
+                setIframeContent(null, html);
                 iframe.classList.add('visible');
             })
             .catch(err => console.error('[PWA] Failed to load HTML:', err));
@@ -290,6 +305,7 @@ function renderPlaylistItem() {
 
     video.classList.add('hidden');
     image.classList.add('hidden');
+    setIframeContent('about:blank');
     iframe.classList.remove('visible');
     video.pause();
 
@@ -306,7 +322,7 @@ function renderPlaylistItem() {
         fetch(item.full_url)
             .then(res => res.text())
             .then(html => {
-                iframe.srcdoc = html;
+                setIframeContent(null, html);
                 iframe.classList.add('visible');
                 playlistTimeout = setTimeout(nextPlaylistItem, (item.duration || 5) * 1000);
             })
@@ -565,6 +581,7 @@ function showPairingScreen(code) {
     loadingOverlay.classList.add('hidden');
     video.classList.add('hidden');
     image.classList.add('hidden');
+    setIframeContent('about:blank');
     iframe.classList.remove('visible');
     if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
 }
@@ -583,13 +600,29 @@ function finalizePairing(deviceId, record) {
 const handleInteraction = () => {
     if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
     if (currentConfig.content_type !== 'video_interactive') return;
+    if (iframe.classList.contains('visible')) return; // Already in interactive mode
+
     console.log('[PWA] Interaction detected.');
-    iframe.src = currentConfig.redirect_url;
+    
+    // Push state to handle back button
+    history.pushState({ interactive: true }, '');
+
+    setIframeContent(currentConfig.redirect_url);
     iframe.classList.add('visible');
     video.classList.add('hidden');
     overlay.classList.add('hidden');
     if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
 };
+
+// Handle back button navigation
+window.addEventListener('popstate', (event) => {
+    console.log('[PWA] Back navigation detected.');
+    // If the iframe is visible, we return to the video state
+    if (currentConfig && currentConfig.content_type === 'video_interactive') {
+        renderContent(currentConfig);
+    }
+});
+
 app.addEventListener('click', handleInteraction);
 app.addEventListener('touchstart', handleInteraction, { passive: true });
 
