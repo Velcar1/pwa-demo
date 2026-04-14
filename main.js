@@ -367,6 +367,27 @@ async function updateContentFromConfig(groupId) {
             console.log('[PWA] Cache complete. Swapping content.');
         }
 
+        // Check for changes before rendering
+        const isSameConfig = currentConfig && currentConfig.id === config.id;
+        const isUserInteracting = iframe.classList.contains('visible');
+
+        // If it's the same config, only re-render if:
+        // 1. The config was actually updated (new timestamp) AND the user is NOT interacting.
+        // 2. Or if the config is different.
+        // We NEVER want to auto-refresh and kill an active interactive session if the ID is the same.
+        if (isSameConfig) {
+            const updatedChanged = currentConfig.updated !== config.updated;
+            
+            if (!updatedChanged || isUserInteracting) {
+                console.log('[PWA] Same config (or user interacting). Skipping render to preserve state.');
+                loadingOverlay.style.opacity = '0';
+                setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
+                // Still update the global currentConfig to keep the latest 'updated' timestamp
+                currentConfig = config; 
+                return;
+            }
+        }
+
         // Update global state
         if (config._playlistItems) {
             playlistItems = config._playlistItems;
