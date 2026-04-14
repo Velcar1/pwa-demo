@@ -596,11 +596,97 @@ function finalizePairing(deviceId, record) {
     startContent(record);
 }
 
-// ─── Interaction Handler ──────────────────────────────────────────────────────
+// ─── Interaction Handler & Inactivity Timer ──────────────────────────────────────────────
+// ─── Interaction Handler & Inactivity Timer ──────────────────────────────────────────────
+let interactionTimestamp = 0;
+let inactivityPoller = null;
+const INACTIVITY_LIMIT_MS = 60000; // 60 seconds
+
+function markInteraction(event) {
+    const now = Date.now();
+    const eventType = event ? (event.type || 'unknown') : 'manual';
+    console.log(`[PWA-Timer] Interaction detected (${eventType}). Timestamp reset.`);
+    interactionTimestamp = now;
+}
+
+function stopInactivityPoller() {
+    if (inactivityPoller) {
+        clearInterval(inactivityPoller);
+        inactivityPoller = null;
+    }
+}
+
+function startInactivityPoller() {
+    stopInactivityPoller();
+    interactionTimestamp = Date.now();
+    console.log(`[PWA-Timer] ACTIVATING ${INACTIVITY_LIMIT_MS/1000}s poller.`);
+    
+    inactivityPoller = setInterval(() => {
+        // Stop checking if we are no longer in the interactive view
+        if (!currentConfig || currentConfig.content_type !== 'video_interactive' || !overlay.classList.contains('hidden')) {
+            console.log('[PWA-Timer] Stopping poller: No longer in interactive state.');
+            stopInactivityPoller();
+            return;
+        }
+
+        const elapsedMs = Date.now() - interactionTimestamp;
+        const remainingS = Math.max(0, Math.ceil((INACTIVITY_LIMIT_MS - elapsedMs) / 1000));
+        
+        // Log every 10 seconds or when below 10 seconds
+        if (remainingS % 10 === 0 || remainingS <= 10) {
+            console.log(`[PWA-Timer] Inactivity check: ${remainingS}s remaining.`);
+        }
+        
+        if (elapsedMs >= INACTIVITY_LIMIT_MS) {
+            console.log('[PWA-Timer] !!! LIMIT EXCEEDED !!! Returning to video.');
+            stopInactivityPoller();
+            
+            // Cleanly simulate pressing "Back" to pop the history state and restore video
+            history.back();
+            
+            // Failsafe direct render just in case history is broken
+            setTimeout(() => {
+                if (overlay.classList.contains('hidden')) {
+                    console.log('[PWA-Timer] Failsafe: history.back() might have failed, forcing renderContent.');
+                    renderContent(currentConfig);
+                }
+            }, 500); 
+        }
+    }, 1000);
+}
+
+// Hook main window events to reset the timestamp
+['touchstart', 'click'].forEach(evt => {
+    window.addEventListener(evt, markInteraction, { passive: true, capture: true });
+});
+
+// If the user clicks inside the iframe, the main window loses focus once.
+// We then immediately "bounce" the focus back to the parent window so that
+// the NEXT click in the iframe also triggers a blur event.
+window.addEventListener('blur', () => {
+    if (document.activeElement === iframe) {
+        console.log('[PWA-Timer] Iframe clicked (blur detected). Reseting timer & Bouncing focus.');
+        markInteraction({ type: 'iframe_interaction' });
+        
+        // We use a small timeout to allow the click inside the iframe to process 
+        // before stealing focus back.
+        setTimeout(() => {
+            if (overlay.classList.contains('hidden')) {
+                window.focus();
+                // If window.focus() doesn't work well on some browsers, we can focus 
+                // an invisible button, but window.focus() is usually enough for PWAs.
+            }
+        }, 100);
+    }
+});
+
 const handleInteraction = () => {
     if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
     if (currentConfig.content_type !== 'video_interactive') return;
-    if (iframe.classList.contains('visible')) return; // Already in interactive mode
+    if (iframe.classList.contains('visible')) {
+        markInteraction({ type: 'handleInteraction_call' });
+        return; // Already in interactive mode
+    }
 
     console.log('[PWA] Interaction detected.');
     
@@ -612,11 +698,16 @@ const handleInteraction = () => {
     video.classList.add('hidden');
     overlay.classList.add('hidden');
     if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
+    
+    // Iniciar temporizador de inactividad
+    startInactivityPoller();
 };
 
 // Handle back button navigation
 window.addEventListener('popstate', (event) => {
     console.log('[PWA] Back navigation detected.');
+    stopInactivityPoller();
+    
     // If the iframe is visible, we return to the video state
     if (currentConfig && currentConfig.content_type === 'video_interactive') {
         renderContent(currentConfig);
