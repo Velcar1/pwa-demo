@@ -8,18 +8,85 @@
     <title>PWA Motorola</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="/style.css">
 </head>
 
 <body>
     <div id="app">
-        <video id="idleVideo" autoplay muted loop playsinline preload="auto">
+        <div id="loadingOverlay">
+            <div class="spinner"></div>
+        </div>
+
+        <!-- Sync Status Indicator -->
+        <div id="syncStatus" class="sync-indicator hidden">
+            <div class="spinner-tiny"></div>
+            <span>Sincronizando...</span>
+        </div>
+
+        <!-- PANTALLA DE VINCULACIÓN -->
+        <div id="pairingOverlay" class="hidden">
+            <div class="pairing-card">
+                <img src="https://gtf-sap-repo.s3.us-east-1.amazonaws.com/images/l1nx/logo2-L1NX-azulnaranja%2B(2).png"
+                    alt="LINX Logo" class="brand-logo">
+                <h1>Vincular Dispositivo</h1>
+                <p>Ingresa este código en tu panel de control para enlazar esta pantalla.</p>
+                <div class="code-display" id="pairingCodeDisplay">------</div>
+                <div class="waiting-indicator">
+                    <div class="spinner-small"></div>
+                    <p>Esperando autorización...</p>
+                </div>
+            </div>
+        </div>
+
+        <video id="idleVideo" muted loop playsinline preload="auto" class="hidden">
             <source src="/video.mp4" type="video/mp4">
             Tu navegador no soporta el elemento de video.
         </video>
+        <img id="displayImage" class="hidden" alt="Contenido">
+        <img id="interactiveImage" class="hidden" alt="Imagen Interactiva">
         <div id="interactionOverlay"></div>
         <iframe id="contentFrame" src="about:blank" allow="autoplay; fullscreen" frameborder="0"></iframe>
     </div>
+    <!-- Critical Polyfills for Chrome 56 / Tizen 4.0 (must run FIRST) -->
+    <script>
+        // globalThis polyfill (Chrome 56 doesn't have it - PocketBase SDK requires it)
+        (function() {
+            if (typeof globalThis === 'undefined') {
+                Object.defineProperty(Object.prototype, '__globalThis__', {
+                    get: function() { return this; },
+                    configurable: true
+                });
+                globalThis = __globalThis__;
+                delete Object.prototype.__globalThis__;
+            }
+        })();
+        // Promise.allSettled polyfill (not in Chrome 56)
+        if (!Promise.allSettled) {
+            Promise.allSettled = function(promises) {
+                return Promise.all(promises.map(function(p) {
+                    return Promise.resolve(p).then(function(value) {
+                        return { status: 'fulfilled', value: value };
+                    }, function(reason) {
+                        return { status: 'rejected', reason: reason };
+                    });
+                }));
+            };
+        }
+        // Object.fromEntries polyfill (not in Chrome 56)
+        if (!Object.fromEntries) {
+            Object.fromEntries = function(iterable) {
+                return Array.from(iterable).reduce(function(obj, ref) {
+                    var key = ref[0]; var val = ref[1];
+                    obj[key] = val;
+                    return obj;
+                }, {});
+            };
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/abortcontroller-polyfill@1.7.5/dist/umd-polyfill.min.js"></script>
+
+    <!-- Samsung Smart Signage / Tizen APIs are loaded dynamically in main.js ONLY on Samsung hardware -->
     <script type="module" src="/main.js"></script>
 </body>
 
