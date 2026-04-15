@@ -23,6 +23,7 @@ const overlay            = document.getElementById('interactionOverlay');
 const loadingOverlay     = document.getElementById('loadingOverlay');
 const pairingOverlay     = document.getElementById('pairingOverlay');
 const pairingCodeDisplay = document.getElementById('pairingCodeDisplay');
+const interactiveImage   = document.getElementById('interactiveImage');
 
 // ─── App State ────────────────────────────────────────────────────────────────
 let currentConfig           = null;
@@ -141,7 +142,7 @@ async function fetchConfig(groupId) {
     const records = await pb.collection('pwa_config').getFullList({
         filter: `group = "${groupId}"`,
         sort: '-created',
-        expand: 'media,playlist'
+        expand: 'media,playlist,interactive_image'
     });
 
     if (records.length === 0) return null;
@@ -173,6 +174,12 @@ async function fetchConfig(groupId) {
         } else if (rec.content_type === 'image_only' || rec.content_type === 'html_only') {
             rec.image_full_url = url;
         }
+    }
+
+    // Build interactive image URL if available
+    if (rec.content_type === 'video_interactive' && rec.expand?.interactive_image) {
+        const im = rec.expand.interactive_image;
+        rec.interactive_image_url = pb.files.getURL(im, im.file);
     }
 
     // Fetch playlist items
@@ -227,6 +234,7 @@ async function loadConfig(groupId) {
 function stopCurrentContent() {
     video.classList.add('hidden');
     image.classList.add('hidden');
+    interactiveImage.classList.add('hidden');
     setIframeContent('about:blank');
     iframe.classList.remove('visible');
     overlay.classList.add('hidden');
@@ -372,6 +380,7 @@ async function updateContentFromConfig(groupId) {
         } else {
             if (config.video_full_url) urlsToCache.push(config.video_full_url);
             if (config.image_full_url) urlsToCache.push(config.image_full_url);
+            if (config.interactive_image_url) urlsToCache.push(config.interactive_image_url);
         }
 
         // Download media BEFORE swapping content:
@@ -633,8 +642,10 @@ function startInactivityPoller() {
     console.log(`[PWA-Timer] ACTIVATING ${INACTIVITY_LIMIT_MS/1000}s poller.`);
     
     inactivityPoller = setInterval(() => {
-        // Stop checking if we are no longer in the interactive view
-        if (!currentConfig || currentConfig.content_type !== 'video_interactive' || !overlay.classList.contains('hidden')) {
+        // Stop checking if we are no longer in an interactive state (iframe OR intermediate image)
+        const isInteractive = currentConfig && currentConfig.content_type === 'video_interactive' && overlay.classList.contains('hidden');
+        
+        if (!isInteractive) {
             console.log('[PWA-Timer] Stopping poller: No longer in interactive state.');
             stopInactivityPoller();
             return;
@@ -685,23 +696,46 @@ function startInactivityPoller() {
 const handleInteraction = () => {
     if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
     if (currentConfig.content_type !== 'video_interactive') return;
+    
+    // If iframe is already open, just mark interaction
     if (iframe.classList.contains('visible')) {
         markInteraction({ type: 'handleInteraction_call' });
-        return; // Already in interactive mode
+        return;
     }
 
-    console.log('[PWA] Interaction detected.');
-    
-    // Push state to handle back button
-    history.pushState({ interactive: true }, '');
+    // STATE 1: CLICK ON VIDEO -> SHOW INTERACTIVE IMAGE (if exists)
+    if (!video.classList.contains('hidden')) {
+        console.log('[PWA] Transition: Video -> Image');
+
+        if (currentConfig.interactive_image_url) {
+            history.pushState({ stage: 'image' }, '');
+            interactiveImage.src = currentConfig.interactive_image_url;
+            interactiveImage.classList.remove('hidden');
+            video.classList.add('hidden');
+            overlay.classList.add('hidden');
+            video.pause();
+            
+            // Start the poller now as we are in interactive mode (intermediate image)
+            startInactivityPoller();
+            return;
+        } 
+        // If no image, fallthrough to Step 2 (open iframe directly)
+    }
+
+    // STATE 2: CLICK ON IMAGE (OR VIDEO IF NO IMAGE) -> OPEN IFRAME
+    console.log('[PWA] Transition: Open Iframe');
+    history.pushState({ stage: 'iframe' }, '');
 
     setIframeContent(currentConfig.redirect_url);
     iframe.classList.add('visible');
+    
+    // Hide everything else
     video.classList.add('hidden');
+    interactiveImage.classList.add('hidden');
     overlay.classList.add('hidden');
+    video.pause();
     if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
     
-    // Iniciar temporizador de inactividad
     startInactivityPoller();
 };
 
@@ -710,8 +744,20 @@ window.addEventListener('popstate', (event) => {
     console.log('[PWA] Back navigation detected.');
     stopInactivityPoller();
     
-    // If the iframe is visible, we return to the video state
-    if (currentConfig && currentConfig.content_type === 'video_interactive') {
+    // Simple logic: if anyone pressed back, we check what needs to be shown based on state
+    // But since we use simple rendering, we just call renderContent which resets everything to idle
+    // unless the state tells us otherwise.
+    
+    const state = event.state || {};
+    
+    if (state.stage === 'image') {
+        // Return to the image state
+        stopCurrentContent();
+        interactiveImage.src = currentConfig.interactive_image_url;
+        interactiveImage.classList.remove('hidden');
+        startInactivityPoller();
+    } else {
+        // Return to the idle video state
         renderContent(currentConfig);
     }
 });
