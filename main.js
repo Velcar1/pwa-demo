@@ -600,7 +600,14 @@ function finalizePairing(deviceId, record) {
 // ─── Interaction Handler & Inactivity Timer ──────────────────────────────────────────────
 let interactionTimestamp = 0;
 let inactivityPoller = null;
+let iframeFocusPoller = null; // New poller for detecting iframe clicks
 const INACTIVITY_LIMIT_MS = 60000; // 60 seconds
+
+// Create a focus sink to pull focus back from iframe
+const focusSink = document.createElement('button');
+focusSink.id = 'focusSink';
+focusSink.style.cssText = 'position:absolute; top:-1000px; left:-1000px; opacity:0; pointer-events:none;';
+document.body.appendChild(focusSink);
 
 function markInteraction(event) {
     const now = Date.now();
@@ -613,6 +620,10 @@ function stopInactivityPoller() {
     if (inactivityPoller) {
         clearInterval(inactivityPoller);
         inactivityPoller = null;
+    }
+    if (iframeFocusPoller) {
+        clearInterval(iframeFocusPoller);
+        iframeFocusPoller = null;
     }
 }
 
@@ -653,31 +664,22 @@ function startInactivityPoller() {
             }, 500); 
         }
     }, 1000);
+
+    // High frequency poller specifically for detecting when focus enters the iframe
+    iframeFocusPoller = setInterval(() => {
+        if (document.activeElement === iframe) {
+            console.log('[PWA-Timer] Iframe focus detected via poller. Resetting timer & pulling focus back.');
+            markInteraction({ type: 'iframe_poller' });
+            
+            // Steal focus back to our invisible sink so that the next click can be detected again
+            focusSink.focus();
+        }
+    }, 250);
 }
 
 // Hook main window events to reset the timestamp
 ['touchstart', 'click'].forEach(evt => {
     window.addEventListener(evt, markInteraction, { passive: true, capture: true });
-});
-
-// If the user clicks inside the iframe, the main window loses focus once.
-// We then immediately "bounce" the focus back to the parent window so that
-// the NEXT click in the iframe also triggers a blur event.
-window.addEventListener('blur', () => {
-    if (document.activeElement === iframe) {
-        console.log('[PWA-Timer] Iframe clicked (blur detected). Reseting timer & Bouncing focus.');
-        markInteraction({ type: 'iframe_interaction' });
-        
-        // We use a small timeout to allow the click inside the iframe to process 
-        // before stealing focus back.
-        setTimeout(() => {
-            if (overlay.classList.contains('hidden')) {
-                window.focus();
-                // If window.focus() doesn't work well on some browsers, we can focus 
-                // an invisible button, but window.focus() is usually enough for PWAs.
-            }
-        }, 100);
-    }
 });
 
 const handleInteraction = () => {
