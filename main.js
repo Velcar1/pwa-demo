@@ -763,7 +763,9 @@ window.addEventListener('popstate', (event) => {
 });
 
 app.addEventListener('click', handleInteraction);
-app.addEventListener('touchstart', handleInteraction, { passive: true });
+// The 'touchstart' listener was causing double-firing (touchstart then click),
+// making it skip the image state instantly when the user released their finger.
+// Relying only on 'click' works for both mouse and touch without duplication.
 
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 async function checkDevicePairing() {
