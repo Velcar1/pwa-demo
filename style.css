@@ -29,20 +29,20 @@ html {
 
 #app {
   position: fixed;
-  top: 0;
+  top: -2px;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh + 4px);
   overflow: hidden;
   background-color: #000;
 }
 
 #idleVideo, #displayImage {
   position: fixed;
-  top: 0;
+  top: -2px;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh + 4px);
   object-fit: cover;
   z-index: 1;
 }
@@ -60,10 +60,10 @@ html {
 
 #loadingOverlay {
   position: fixed;
-  top: 0;
+  top: -2px;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh + 4px);
   background: #000;
   display: flex;
   justify-content: center;
@@ -133,10 +133,10 @@ html {
 
 #interactiveImage {
   position: fixed;
-  top: 0;
+  top: -2px;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh + 4px);
   object-fit: cover;
   z-index: 4; /* Below iframe (5), above video (base) */
 }
@@ -158,10 +158,10 @@ html {
 /* Pantalla de Vinculación (Pairing Overlay) */
 #pairingOverlay {
   position: fixed;
-  top: 0;
+  top: -2px;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh + 4px);
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   display: flex;
   justify-content: center;
