@@ -7,63 +7,12 @@ const MEDIA_CACHE_NAME = 'pwa-media-v1';
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
+// ─── Register Service Worker ──────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw-media.js')
         .then(reg => console.log('[SW] Registered:', reg.scope))
         .catch(err => console.warn('[SW] Registration failed:', err));
 }
-
-// ─── Fullscreen Manager ───────────────────────────────────────────────────────
-// On Android, fullscreen is lost when the PWA is minimized. This re-requests
-// fullscreen every time the app returns to the foreground.
-function requestFullscreen() {
-    const el = document.documentElement;
-    try {
-        if (el.requestFullscreen) {
-            el.requestFullscreen({ navigationUI: 'hide' });
-        } else if (el.webkitRequestFullscreen) {
-            el.webkitRequestFullscreen();
-        } else if (el.mozRequestFullScreen) {
-            el.mozRequestFullScreen();
-        } else if (el.msRequestFullscreen) {
-            el.msRequestFullscreen();
-        }
-    } catch (e) {
-        console.warn('[PWA] Could not request fullscreen:', e);
-    }
-}
-
-// Request fullscreen on first user interaction (browsers require a gesture)
-let fullscreenRequested = false;
-function onFirstInteraction() {
-    if (!fullscreenRequested) {
-        fullscreenRequested = true;
-        requestFullscreen();
-    }
-    document.removeEventListener('click', onFirstInteraction, true);
-    document.removeEventListener('touchstart', onFirstInteraction, true);
-}
-document.addEventListener('click', onFirstInteraction, true);
-document.addEventListener('touchstart', onFirstInteraction, true);
-
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-        // Re-request fullscreen when returning from background
-        // Small delay to let the browser stabilize first
-        setTimeout(() => requestFullscreen(), 50);
-
-        // Also show black curtain briefly while fullscreen re-activates
-        const overlay = document.getElementById('loadingOverlay');
-        if (overlay) {
-            overlay.style.opacity = '1';
-            overlay.classList.remove('hidden');
-            setTimeout(() => {
-                overlay.style.opacity = '0';
-                setTimeout(() => overlay.classList.add('hidden'), 400);
-            }, 300);
-        }
-    }
-});
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app                = document.getElementById('app');
@@ -739,9 +688,43 @@ function startInactivityPoller() {
     }, 250);
 }
 
-// Hook main window events to reset the timestamp
+// ─── Fullscreen Management ────────────────────────────────────────────────────
+// When the PWA is minimized and re-opened, Android may restore the browser
+// chrome (status bar), causing a white strip at the top.
+// Requesting fullscreen on the first user gesture, and any time fullscreen
+// is lost, forces the app back to true fullscreen.
+function requestAppFullscreen() {
+    const el = document.documentElement;
+    if (document.fullscreenElement) return; // Already fullscreen
+    const req = el.requestFullscreen
+        || el.webkitRequestFullscreen
+        || el.mozRequestFullScreen
+        || el.msRequestFullscreen;
+    if (req) {
+        req.call(el).catch(() => {
+            // Silently ignore – device may not support it
+        });
+    }
+}
+
+// Re-enter fullscreen whenever the browser exits it (e.g. after minimizing)
+document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+        console.log('[PWA] Fullscreen lost. Will re-request on next gesture.');
+    }
+});
+document.addEventListener('webkitfullscreenchange', () => {
+    if (!document.webkitFullscreenElement) {
+        console.log('[PWA] Webkit fullscreen lost. Will re-request on next gesture.');
+    }
+});
+
+// Hook main window events to reset the inactivity timestamp AND re-enter fullscreen
 ['touchstart', 'click'].forEach(evt => {
-    window.addEventListener(evt, markInteraction, { passive: true, capture: true });
+    window.addEventListener(evt, (e) => {
+        markInteraction(e);
+        requestAppFullscreen(); // Re-enter fullscreen on every gesture (handles resume-from-minimize)
+    }, { passive: true, capture: true });
 });
 
 const handleInteraction = () => {
