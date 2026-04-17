@@ -32,6 +32,19 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('resize', flushViewport);
 document.addEventListener('DOMContentLoaded', flushViewport);
 
+// ─── Forzar API de Pantalla Completa en interacciones ─────────────────────────
+function ensureFullscreen() {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.warn(`[Fullscreen] Error: ${err.message}`);
+        });
+    }
+}
+// Las APIs de pantalla completa DEDICADA requieren obligatoriamente un "gesto humano" 
+// (un tap, un clic) para activarse por motivos de seguridad del navegador.
+window.addEventListener('click', ensureFullscreen, { capture: true });
+window.addEventListener('touchstart', ensureFullscreen, { capture: true, passive: true });
+
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
