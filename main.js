@@ -15,13 +15,38 @@ if ('serviceWorker' in navigator) {
 }
 
 // ─── Fix: White strip on Android Chrome when restoring from background ────────
-// When a PWA is minimized and restored, Android Chrome briefly changes the
-// viewport dimensions while toggling its system UI, leaving a gap at the top.
-// We force a GPU repaint cycle on visibilitychange to flush that stale layout.
+function forceFullscreen() {
+    const w = window.innerWidth + 'px';
+    const h = window.innerHeight + 'px';
+    document.documentElement.style.width = w;
+    document.documentElement.style.height = h;
+    document.body.style.width = w;
+    document.body.style.height = h;
+    
+    const layers = [
+        document.getElementById('app'),
+        document.getElementById('idleVideo'),
+        document.getElementById('displayImage'),
+        document.getElementById('interactiveImage'),
+        document.getElementById('contentFrame'),
+        document.getElementById('interactionOverlay'),
+        document.getElementById('loadingOverlay'),
+        document.getElementById('pairingOverlay')
+    ];
+    layers.forEach(el => {
+        if (el) {
+            el.style.width = w;
+            el.style.height = h;
+        }
+    });
+}
+
+window.addEventListener('resize', forceFullscreen);
+
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-        // Trigger a GPU layer repaint by toggling a transform on the root element.
-        // This is instant (no flash) but forces the browser to re-evaluate layout.
+        forceFullscreen();
+        setTimeout(forceFullscreen, 150);
         document.documentElement.style.transform = 'translateZ(0)';
         requestAnimationFrame(() => {
             document.documentElement.style.transform = '';
@@ -29,6 +54,7 @@ document.addEventListener('visibilitychange', () => {
         });
     }
 });
+forceFullscreen();
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app                = document.getElementById('app');
