@@ -14,6 +14,22 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.warn('[SW] Registration failed:', err));
 }
 
+// ─── Fix: White strip on Android Chrome when restoring from background ────────
+// When a PWA is minimized and restored, Android Chrome briefly changes the
+// viewport dimensions while toggling its system UI, leaving a gap at the top.
+// We force a GPU repaint cycle on visibilitychange to flush that stale layout.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Trigger a GPU layer repaint by toggling a transform on the root element.
+        // This is instant (no flash) but forces the browser to re-evaluate layout.
+        document.documentElement.style.transform = 'translateZ(0)';
+        requestAnimationFrame(() => {
+            document.documentElement.style.transform = '';
+            window.scrollTo(0, 0);
+        });
+    }
+});
+
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app                = document.getElementById('app');
 const video              = document.getElementById('idleVideo');
@@ -688,59 +704,9 @@ function startInactivityPoller() {
     }, 250);
 }
 
-// ─── Fullscreen Management ────────────────────────────────────────────────────
-// When the PWA is minimized and re-opened, Android may restore the browser
-// chrome (status bar), causing a white strip at the top.
-// Requesting fullscreen on the first user gesture, and any time fullscreen
-// is lost, forces the app back to true fullscreen.
-function requestAppFullscreen() {
-    const el = document.documentElement;
-    if (document.fullscreenElement) return; // Already fullscreen
-    const req = el.requestFullscreen
-        || el.webkitRequestFullscreen
-        || el.mozRequestFullScreen
-        || el.msRequestFullscreen;
-    if (req) {
-        req.call(el).catch(() => {
-            // Silently ignore – device may not support it
-        });
-    }
-}
-
-// Re-enter fullscreen whenever the browser exits it (e.g. after minimizing).
-// On some Android browsers (Chrome for Android), calling requestFullscreen()
-// inside the 'fullscreenchange' handler or 'visibilitychange' is allowed
-// without a fresh user gesture because it is considered a "re-activation" context.
-['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
-    document.addEventListener(evt, () => {
-        const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
-        if (!isFullscreen) {
-            console.log('[PWA] Fullscreen lost, attempting auto re-entry...');
-            // Small delay to let the browser settle after app resume
-            setTimeout(requestAppFullscreen, 300);
-        } else {
-            console.log('[PWA] Fullscreen active.');
-        }
-    });
-});
-
-// Also try re-entering fullscreen when the page becomes visible again
-// (e.g. user switches back to the app from the home screen / recent apps).
-// This fires BEFORE the user touches anything, so it covers the gap between
-// the app resuming and the user's first gesture.
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-        console.log('[PWA] Page visible – requesting fullscreen...');
-        setTimeout(requestAppFullscreen, 300);
-    }
-});
-
-// Hook main window events to reset the inactivity timestamp AND re-enter fullscreen
+// Hook main window events to reset the timestamp
 ['touchstart', 'click'].forEach(evt => {
-    window.addEventListener(evt, (e) => {
-        markInteraction(e);
-        requestAppFullscreen(); // Re-enter fullscreen on every gesture (handles resume-from-minimize)
-    }, { passive: true, capture: true });
+    window.addEventListener(evt, markInteraction, { passive: true, capture: true });
 });
 
 const handleInteraction = () => {
