@@ -13,24 +13,57 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.warn('[SW] Registration failed:', err));
 }
 
-// ─── Black curtain on resume to hide Chrome's white flash ─────────────────────
+// ─── Fullscreen Manager ───────────────────────────────────────────────────────
+// On Android, fullscreen is lost when the PWA is minimized. This re-requests
+// fullscreen every time the app returns to the foreground.
+function requestFullscreen() {
+    const el = document.documentElement;
+    try {
+        if (el.requestFullscreen) {
+            el.requestFullscreen({ navigationUI: 'hide' });
+        } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+        } else if (el.mozRequestFullScreen) {
+            el.mozRequestFullScreen();
+        } else if (el.msRequestFullscreen) {
+            el.msRequestFullscreen();
+        }
+    } catch (e) {
+        console.warn('[PWA] Could not request fullscreen:', e);
+    }
+}
+
+// Request fullscreen on first user interaction (browsers require a gesture)
+let fullscreenRequested = false;
+function onFirstInteraction() {
+    if (!fullscreenRequested) {
+        fullscreenRequested = true;
+        requestFullscreen();
+    }
+    document.removeEventListener('click', onFirstInteraction, true);
+    document.removeEventListener('touchstart', onFirstInteraction, true);
+}
+document.addEventListener('click', onFirstInteraction, true);
+document.addEventListener('touchstart', onFirstInteraction, true);
+
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-        // When app comes back from background, Chrome briefly shows its UI
-        // which can push content and reveal a white gap. We briefly show the
-        // black loading overlay as a curtain to hide this flash.
+        // Re-request fullscreen when returning from background
+        // Small delay to let the browser stabilize first
+        setTimeout(() => requestFullscreen(), 50);
+
+        // Also show black curtain briefly while fullscreen re-activates
         const overlay = document.getElementById('loadingOverlay');
         if (overlay) {
             overlay.style.opacity = '1';
             overlay.classList.remove('hidden');
             setTimeout(() => {
                 overlay.style.opacity = '0';
-                setTimeout(() => overlay.classList.add('hidden'), 500);
-            }, 400);
+                setTimeout(() => overlay.classList.add('hidden'), 400);
+            }, 300);
         }
     }
 });
-
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app                = document.getElementById('app');
