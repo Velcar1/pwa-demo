@@ -13,6 +13,23 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.warn('[SW] Registration failed:', err));
 }
 
+// ─── Black curtain on resume to hide Chrome's white flash ─────────────────────
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // When app comes back from background, Chrome briefly shows its UI
+        // which can push content and reveal a white gap. We briefly show the
+        // black loading overlay as a curtain to hide this flash.
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.style.opacity = '1';
+            overlay.classList.remove('hidden');
+            setTimeout(() => {
+                overlay.style.opacity = '0';
+                setTimeout(() => overlay.classList.add('hidden'), 500);
+            }, 400);
+        }
+    }
+});
 
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
