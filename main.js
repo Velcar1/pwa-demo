@@ -7,12 +7,26 @@ const MEDIA_CACHE_NAME = 'pwa-media-v1';
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
-// ─── Register Service Worker ──────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw-media.js')
         .then(reg => console.log('[SW] Registered:', reg.scope))
         .catch(err => console.warn('[SW] Registration failed:', err));
 }
+
+// ─── Viewport Height Fix (Android resume-from-background gap) ─────────────────
+function setVH() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', vh + 'px');
+}
+setVH();
+window.addEventListener('resize', setVH);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Small delay to let the browser settle its viewport after resume
+        setTimeout(setVH, 100);
+        setTimeout(setVH, 300);
+    }
+});
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app                = document.getElementById('app');
