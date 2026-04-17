@@ -707,15 +707,31 @@ function requestAppFullscreen() {
     }
 }
 
-// Re-enter fullscreen whenever the browser exits it (e.g. after minimizing)
-document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement) {
-        console.log('[PWA] Fullscreen lost. Will re-request on next gesture.');
-    }
+// Re-enter fullscreen whenever the browser exits it (e.g. after minimizing).
+// On some Android browsers (Chrome for Android), calling requestFullscreen()
+// inside the 'fullscreenchange' handler or 'visibilitychange' is allowed
+// without a fresh user gesture because it is considered a "re-activation" context.
+['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
+    document.addEventListener(evt, () => {
+        const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        if (!isFullscreen) {
+            console.log('[PWA] Fullscreen lost, attempting auto re-entry...');
+            // Small delay to let the browser settle after app resume
+            setTimeout(requestAppFullscreen, 300);
+        } else {
+            console.log('[PWA] Fullscreen active.');
+        }
+    });
 });
-document.addEventListener('webkitfullscreenchange', () => {
-    if (!document.webkitFullscreenElement) {
-        console.log('[PWA] Webkit fullscreen lost. Will re-request on next gesture.');
+
+// Also try re-entering fullscreen when the page becomes visible again
+// (e.g. user switches back to the app from the home screen / recent apps).
+// This fires BEFORE the user touches anything, so it covers the gap between
+// the app resuming and the user's first gesture.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        console.log('[PWA] Page visible – requesting fullscreen...');
+        setTimeout(requestAppFullscreen, 300);
     }
 });
 
