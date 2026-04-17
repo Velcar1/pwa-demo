@@ -13,18 +13,10 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.warn('[SW] Registration failed:', err));
 }
 
-// ─── Viewport Height Fix (Android resume-from-background gap) ─────────────────
-function setVH() {
-    const vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', vh + 'px');
-}
-setVH();
-window.addEventListener('resize', setVH);
+// ─── Force reload when app resumes from background ───────────────────────────
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-        // Small delay to let the browser settle its viewport after resume
-        setTimeout(setVH, 100);
-        setTimeout(setVH, 300);
+        window.location.reload();
     }
 });
 
