@@ -13,12 +13,7 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.warn('[SW] Registration failed:', err));
 }
 
-// ─── Force reload when app resumes from background ───────────────────────────
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-        window.location.reload();
-    }
-});
+
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app                = document.getElementById('app');
