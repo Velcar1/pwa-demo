@@ -29,20 +29,20 @@ html {
 
 #app {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: -5px !important;
+  left: -5px !important;
+  width: calc(100% + 10px) !important;
+  height: calc(100% + 10px) !important;
   overflow: hidden;
   background-color: #000;
 }
 
 #idleVideo, #displayImage {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: -5px !important;
+  left: -5px !important;
+  width: calc(100% + 10px) !important;
+  height: calc(100% + 10px) !important;
   object-fit: cover;
   z-index: 1;
 }
@@ -60,10 +60,10 @@ html {
 
 #loadingOverlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: -5px !important;
+  left: -5px !important;
+  width: calc(100% + 10px) !important;
+  height: calc(100% + 10px) !important;
   background: #000;
   display: flex;
   justify-content: center;
@@ -133,10 +133,10 @@ html {
 
 #interactiveImage {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: -5px !important;
+  left: -5px !important;
+  width: calc(100% + 10px) !important;
+  height: calc(100% + 10px) !important;
   object-fit: cover;
   z-index: 4; /* Below iframe (5), above video (base) */
 }
@@ -159,10 +159,10 @@ html {
 /* Pantalla de Vinculación (Pairing Overlay) */
 #pairingOverlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: -5px !important;
+  left: -5px !important;
+  width: calc(100% + 10px) !important;
+  height: calc(100% + 10px) !important;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   display: flex;
   justify-content: center;
