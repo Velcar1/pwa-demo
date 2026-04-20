@@ -11,8 +11,8 @@ export default defineConfig({
                 name: 'PWA Motorola Video Loop',
                 short_name: 'MotorolaPWA',
                 description: 'App para reproducción de video en loop y redirección',
-                theme_color: '#ffffff',
-                background_color: '#ffffff',
+                theme_color: '#000000',
+                background_color: '#000000',
                 display: 'fullscreen',
                 orientation: 'portrait',
                 icons: [
