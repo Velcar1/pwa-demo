@@ -19,8 +19,21 @@ function flushViewport() {
     const vh = window.innerHeight;
     document.documentElement.style.height = `${vh}px`;
     document.body.style.height = `${vh}px`;
+    document.body.style.overscrollBehavior = 'none'; // Prevent pull-to-refresh
+    
     const app = document.getElementById('app');
     if (app) app.style.height = `${vh}px`;
+    
+    const iframe = document.getElementById('contentFrame');
+    if (iframe && iframe.classList.contains('visible')) {
+        iframe.style.height = `${vh}px`;
+    }
+
+    const interactiveImage = document.getElementById('interactiveImage');
+    if (interactiveImage && !interactiveImage.classList.contains('hidden')) {
+        interactiveImage.style.height = `${vh}px`;
+    }
+
     window.scrollTo(0, 0);
 }
 document.addEventListener('visibilitychange', () => {
