@@ -1,5 +1,16 @@
 import PocketBase from 'pocketbase';
 
+// ─── Force Immersive Colors ASAP ─────────────────────────────────────────────
+(function() {
+    const themeMeta = document.querySelector('meta[name="theme-color"]') || document.createElement('meta');
+    themeMeta.name = "theme-color";
+    themeMeta.content = "#000000";
+    if (!themeMeta.parentNode) document.head.appendChild(themeMeta);
+    
+    document.documentElement.style.backgroundColor = "#000000";
+    document.body.style.backgroundColor = "#000000";
+})();
+
 // ─── Configuration ────────────────────────────────────────────────────────────
 const PB_URL = import.meta.env.VITE_PB_URL || 'https://firm-ordinary-metres-complex.trycloudflare.com/';
 const MEDIA_CACHE_NAME = 'pwa-media-v1';
