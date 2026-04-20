@@ -13,7 +13,7 @@ export default defineConfig({
                 description: 'App para reproducción de video en loop y redirección',
                 theme_color: '#ffffff',
                 background_color: '#ffffff',
-                display: 'standalone',
+                display: 'fullscreen',
                 orientation: 'portrait',
                 icons: [
                     {

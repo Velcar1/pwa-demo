@@ -2,7 +2,7 @@
   "name": "PWA Motorola",
   "short_name": "PWA",
   "start_url": "/",
-  "display": "standalone",
+  "display": "fullscreen",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "orientation": "any",
