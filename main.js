@@ -14,22 +14,7 @@ if ('serviceWorker' in navigator) {
         .catch(err => console.warn('[SW] Registration failed:', err));
 }
 
-// Enfoque reemplazado por sobredimensionamiento CSS (bleed) en style.css
 
-// ─── Forzar API de Pantalla Completa en interacciones ─────────────────────────
-function ensureFullscreen() {
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(err => {
-            console.warn(`[Fullscreen] Error: ${err.message}`);
-        });
-    }
-}
-// Las APIs de pantalla completa DEDICADA requieren obligatoriamente un "gesto humano" 
-// (un tap, un clic) para activarse por motivos de seguridad del navegador.
-window.addEventListener('click', ensureFullscreen, { capture: true });
-window.addEventListener('touchstart', ensureFullscreen, { capture: true, passive: true });
-
-// ─── DOM Elements ─────────────────────────────────────────────────────────────
 const app = document.getElementById('app');
 const video = document.getElementById('idleVideo');
 const image = document.getElementById('displayImage');
