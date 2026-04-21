@@ -20,6 +20,15 @@ pb.autoCancellation(false);
 
 // Service worker registration is handled automatically by Vite's PWA plugin
 // via the registerSW.js script injected in index.html.
+if ('serviceWorker' in navigator) {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        console.log('[PWA] New version detected. Reloading...');
+        window.location.reload();
+    });
+}
 
 
 const app = document.getElementById('app');
