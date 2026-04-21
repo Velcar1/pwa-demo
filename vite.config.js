@@ -26,13 +26,16 @@ export default defineConfig({
                 ],
             },
             manifest: {
+                id: 'com.linx.pwa.motorola',
                 name: 'PWA Motorola Video Loop',
                 short_name: 'MotorolaPWA',
                 description: 'App para reproducción de video en loop y redirección',
+                start_url: '/',
                 theme_color: '#000000',
                 background_color: '#000000',
                 display: 'fullscreen',
                 orientation: 'portrait',
+                categories: ['productivity', 'utilities', 'business'],
                 icons: [
                     {
                         src: 'pwa-192x192.jpg',
