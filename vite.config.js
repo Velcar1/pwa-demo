@@ -5,8 +5,26 @@ export default defineConfig({
     plugins: [
         VitePWA({
             registerType: 'autoUpdate',
-            // Include sw-media.js so it's copied to dist as-is (not processed)
-            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'video.mp4', 'sw-media.js'],
+            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'video.mp4'],
+            workbox: {
+                globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+                runtimeCaching: [
+                    {
+                        urlPattern: /^https:\/\/.*\/api\/files\/.*/i,
+                        handler: 'CacheFirst',
+                        options: {
+                            cacheName: 'pwa-media-v1',
+                            expiration: {
+                                maxEntries: 50,
+                                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+                            },
+                            cacheableResponse: {
+                                statuses: [0, 200],
+                            },
+                        },
+                    },
+                ],
+            },
             manifest: {
                 name: 'PWA Motorola Video Loop',
                 short_name: 'MotorolaPWA',

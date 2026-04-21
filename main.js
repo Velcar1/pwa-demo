@@ -18,12 +18,8 @@ const MEDIA_CACHE_NAME = 'pwa-media-v1';
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
-// ─── Register Service Worker ──────────────────────────────────────────────────
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw-media.js')
-        .then(reg => console.log('[SW] Registered:', reg.scope))
-        .catch(err => console.warn('[SW] Registration failed:', err));
-}
+// Service worker registration is handled automatically by Vite's PWA plugin
+// via the registerSW.js script injected in index.html.
 
 
 const app = document.getElementById('app');
@@ -79,7 +75,8 @@ function setIframeContent(url, htmlContent = null) {
 function showSync(msg = '⬇ Descargando...') {
     const el = document.getElementById('syncStatus');
     if (!el) return;
-    el.textContent = msg;
+    const span = el.querySelector('span');
+    if (span) span.textContent = msg;
     el.classList.remove('hidden');
     el.style.opacity = '1';
 }
