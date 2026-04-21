@@ -42,13 +42,17 @@ let isLoadingContent = false; // prevents concurrent content loads
 // ─── DOM Helpers ──────────────────────────────────────────────────────────────
 async function activateFullscreen() {
     try {
-        if (!document.fullscreenElement) {
-            // Check for various requestFullscreen methods (standard, webkit, moz, ms)
-            const rfs = document.documentElement.requestFullscreen || 
-                        document.documentElement.webkitRequestFullscreen || 
-                        document.documentElement.mozRequestFullScreen || 
-                        document.documentElement.msRequestFullscreen;
-            if (rfs) await rfs.call(document.documentElement);
+        const docEl = document.documentElement;
+        if (!document.fullscreenElement && 
+            !document.webkitFullscreenElement && 
+            !document.mozFullScreenElement && 
+            !document.msFullscreenElement) {
+            
+            const rfs = docEl.requestFullscreen || 
+                        docEl.webkitRequestFullscreen || 
+                        docEl.mozRequestFullScreen || 
+                        docEl.msRequestFullscreen;
+            if (rfs) await rfs.call(docEl);
             console.log('[PWA] Fullscreen activated.');
         }
     } catch (err) {
@@ -62,6 +66,7 @@ function setIframeContent(url, htmlContent = null) {
     newIframe.id = 'contentFrame';
     newIframe.allow = "autoplay; fullscreen";
     newIframe.frameBorder = "0";
+    newIframe.style.backgroundColor = "#000000"; // Prevent white flash
     if (htmlContent !== null) {
         newIframe.srcdoc = htmlContent;
     } else {
