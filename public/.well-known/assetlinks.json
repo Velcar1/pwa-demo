@@ -2,7 +2,7 @@
       "relation": ["delegate_permission/common.handle_all_urls"],
       "target": {
         "namespace": "android_app",
-        "package_name": "app.netlify.tetra_m.twa",
-        "sha256_cert_fingerprints": ["9A:D3:6C:8C:D7:6F:12:0B:42:0C:86:11:7D:59:CB:0F:AF:D9:1B:51:93:FE:C5:66:42:C3:EE:9E:B9:BF:93:2A"]
+        "package_name": "app.netlify.apk_m.twa",
+        "sha256_cert_fingerprints": ["D9:B8:05:39:15:B6:2C:A5:17:C0:BB:BB:B3:0C:8F:F5:A2:A3:F1:F0:A7:BD:44:CC:BA:E4:6C:A4:7E:F1:2E:D7"]
       }
     }]
