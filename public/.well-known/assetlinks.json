@@ -3,6 +3,6 @@
       "target": {
         "namespace": "android_app",
         "package_name": "app.netlify.apk_m.twa",
-        "sha256_cert_fingerprints": ["D9:B8:05:39:15:B6:2C:A5:17:C0:BB:BB:B3:0C:8F:F5:A2:A3:F1:F0:A7:BD:44:CC:BA:E4:6C:A4:7E:F1:2E:D7"]
+        "sha256_cert_fingerprints": ["71:22:D7:75:DF:34:95:6F:65:8A:7F:43:F9:2E:75:12:80:AD:5F:72:FB:56:86:CC:D6:1F:B8:89:00:AD:C3:47"]
       }
     }]
