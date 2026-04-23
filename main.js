@@ -49,28 +49,25 @@ let playlistTimeout = null;
 let isLoadingContent = false; // prevents concurrent content loads
 
 // ─── DOM Helpers ──────────────────────────────────────────────────────────────
+// Fullscreen activation function
 async function activateFullscreen() {
     try {
         const docEl = document.documentElement;
-        if (!document.fullscreenElement && 
-            !document.webkitFullscreenElement && 
-            !document.mozFullScreenElement && 
-            !document.msFullscreenElement) {
-            
+        const isCurrentlyFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        const heightGap = Math.abs(window.innerHeight - screen.height);
+        
+        // Only try to request if we detect a gap or not full
+        if (!isCurrentlyFull || heightGap > 10) {
             const rfs = docEl.requestFullscreen || 
                         docEl.webkitRequestFullscreen || 
                         docEl.mozRequestFullScreen || 
                         docEl.msRequestFullscreen;
             if (rfs) await rfs.call(docEl);
-            // We don't log success to avoid spamming the console every 300ms
         }
     } catch (err) {
-        // Silent fail - usually because of lack of user gesture in the interval poller
+        // Silent fail - expected if not called from a user gesture
     }
 }
-
-// Polling for fullscreen every 300ms as requested by the user
-setInterval(activateFullscreen, 300);
 
 
 // Always recreate the iframe instead of changing .src to avoid polluting window.history
@@ -731,9 +728,12 @@ function startInactivityPoller() {
     }, 250);
 }
 
-// Hook main window events to reset the timestamp
-['touchstart', 'click'].forEach(evt => {
-    window.addEventListener(evt, markInteraction, { passive: true, capture: true });
+// Hook main window events to reset the timestamp and try to trigger fullscreen
+['touchstart', 'click', 'mousemove', 'scroll'].forEach(evt => {
+    window.addEventListener(evt, () => {
+        markInteraction({ type: evt });
+        activateFullscreen();
+    }, { passive: true, capture: true });
 });
 
 const handleInteraction = () => {

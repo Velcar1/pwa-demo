@@ -31,9 +31,10 @@ export default defineConfig({
                 short_name: 'MotorolaPWA',
                 description: 'App para reproducción de video en loop y redirección',
                 start_url: '/',
-                theme_color: '#000000',
-                background_color: '#000000',
+                theme_color: '#ffffff',
+                background_color: '#ffffff',
                 display: 'fullscreen',
+                display_override: ['fullscreen', 'standalone', 'minimal-ui'],
                 orientation: 'portrait',
                 categories: ['productivity', 'utilities', 'business'],
                 icons: [
