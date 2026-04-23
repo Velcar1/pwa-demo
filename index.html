@@ -51,15 +51,15 @@
         <img id="displayImage" class="hidden" alt="Contenido">
         <img id="interactiveImage" class="hidden" alt="Imagen Interactiva">
         <div id="interactionOverlay"></div>
-        <iframe id="contentFrame" src="about:blank" allow="autoplay; fullscreen" frameborder="0"></iframe>
+        <iframe id="contentFrame" src="about:blank" allow="autoplay; fullscreen" style="border: none;"></iframe>
     </div>
     <!-- Critical Polyfills for Chrome 56 / Tizen 4.0 (must run FIRST) -->
     <script>
         // globalThis polyfill (Chrome 56 doesn't have it - PocketBase SDK requires it)
-        (function() {
+        (function () {
             if (typeof globalThis === 'undefined') {
                 Object.defineProperty(Object.prototype, '__globalThis__', {
-                    get: function() { return this; },
+                    get: function () { return this; },
                     configurable: true
                 });
                 globalThis = __globalThis__;
@@ -68,11 +68,11 @@
         })();
         // Promise.allSettled polyfill (not in Chrome 56)
         if (!Promise.allSettled) {
-            Promise.allSettled = function(promises) {
-                return Promise.all(promises.map(function(p) {
-                    return Promise.resolve(p).then(function(value) {
+            Promise.allSettled = function (promises) {
+                return Promise.all(promises.map(function (p) {
+                    return Promise.resolve(p).then(function (value) {
                         return { status: 'fulfilled', value: value };
-                    }, function(reason) {
+                    }, function (reason) {
                         return { status: 'rejected', reason: reason };
                     });
                 }));
@@ -80,8 +80,8 @@
         }
         // Object.fromEntries polyfill (not in Chrome 56)
         if (!Object.fromEntries) {
-            Object.fromEntries = function(iterable) {
-                return Array.from(iterable).reduce(function(obj, ref) {
+            Object.fromEntries = function (iterable) {
+                return Array.from(iterable).reduce(function (obj, ref) {
                     var key = ref[0]; var val = ref[1];
                     obj[key] = val;
                     return obj;

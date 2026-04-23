@@ -55,7 +55,8 @@ function setIframeContent(url, htmlContent = null) {
     const newIframe = document.createElement('iframe');
     newIframe.id = 'contentFrame';
     newIframe.allow = "autoplay; fullscreen";
-    newIframe.frameBorder = "0";
+    newIframe.style.border = "0";
+    newIframe.style.outline = "none";
     newIframe.style.backgroundColor = "#000000"; // Prevent white flash
     if (htmlContent !== null) {
         newIframe.srcdoc = htmlContent;
