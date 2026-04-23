@@ -32,12 +32,10 @@ html {
 
 #app {
   position: fixed;
-  /* Re-aplicamos el 'overshoot' para forzar que el contenido suba y tape la franja de notificaciones */
-  /* ya que el modo automático safe-area no está siendo respetado por el dispositivo */
-  top: -30px !important;
+  top: 0 !important;
   left: 0 !important;
   width: 100% !important;
-  height: calc(100% + 60px) !important;
+  height: 100% !important;
   overflow: hidden;
   background-color: #000;
 }

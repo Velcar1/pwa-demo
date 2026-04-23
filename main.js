@@ -49,6 +49,29 @@ let playlistTimeout = null;
 let isLoadingContent = false; // prevents concurrent content loads
 
 // ─── DOM Helpers ──────────────────────────────────────────────────────────────
+async function activateFullscreen() {
+    try {
+        const docEl = document.documentElement;
+        if (!document.fullscreenElement && 
+            !document.webkitFullscreenElement && 
+            !document.mozFullScreenElement && 
+            !document.msFullscreenElement) {
+            
+            const rfs = docEl.requestFullscreen || 
+                        docEl.webkitRequestFullscreen || 
+                        docEl.mozRequestFullScreen || 
+                        docEl.msRequestFullscreen;
+            if (rfs) await rfs.call(docEl);
+            // We don't log success to avoid spamming the console every 300ms
+        }
+    } catch (err) {
+        // Silent fail - usually because of lack of user gesture in the interval poller
+    }
+}
+
+// Polling for fullscreen every 300ms as requested by the user
+setInterval(activateFullscreen, 300);
+
 
 // Always recreate the iframe instead of changing .src to avoid polluting window.history
 function setIframeContent(url, htmlContent = null) {
@@ -714,6 +737,7 @@ function startInactivityPoller() {
 });
 
 const handleInteraction = () => {
+    activateFullscreen();
 
     if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
     if (currentConfig.content_type !== 'video_interactive') return;
