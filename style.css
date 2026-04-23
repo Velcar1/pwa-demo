@@ -34,8 +34,10 @@ html {
   position: fixed;
   top: 0 !important;
   left: 0 !important;
+  /* Expande el contenedor hacia las áreas seguras (notch) si el dispositivo las tiene */
+  margin-top: calc(-1 * env(safe-area-inset-top, 0px));
+  height: calc(100% + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)) !important;
   width: 100% !important;
-  height: 100% !important;
   overflow: hidden;
   background-color: #000;
 }
