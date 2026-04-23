@@ -5,7 +5,7 @@ export default defineConfig({
     plugins: [
         VitePWA({
             registerType: 'autoUpdate',
-            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'video.mp4'],
+            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'pwa-icon-192x192.png', 'pwa-icon-512x512.png', 'video.mp4'],
             workbox: {
                 globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
                 runtimeCaching: [
@@ -38,18 +38,20 @@ export default defineConfig({
                 categories: ['productivity', 'utilities', 'business'],
                 icons: [
                     {
+                        src: 'pwa-icon-192x192.png',
+                        sizes: '192x192',
+                        type: 'image/png',
+                        purpose: 'maskable any'
+                    },
+                    {
+                        src: 'pwa-icon-512x512.png',
+                        sizes: '512x512',
+                        type: 'image/png',
+                        purpose: 'maskable any'
+                    },
+                    {
                         src: 'pwa-192x192.png',
                         sizes: '192x192',
-                        type: 'image/png'
-                    },
-                    {
-                        src: 'pwa-512x512.png',
-                        sizes: '512x512',
-                        type: 'image/png'
-                    },
-                    {
-                        src: 'pwa-512x512.png',
-                        sizes: '512x512',
                         type: 'image/png',
                         purpose: 'any'
                     },
@@ -57,7 +59,7 @@ export default defineConfig({
                         src: 'pwa-512x512.png',
                         sizes: '512x512',
                         type: 'image/png',
-                        purpose: 'maskable'
+                        purpose: 'any'
                     }
                 ]
             }
