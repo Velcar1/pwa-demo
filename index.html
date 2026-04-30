@@ -53,6 +53,17 @@
         <img id="interactiveImage" class="hidden" alt="Imagen Interactiva">
         <div id="interactionOverlay"></div>
         <iframe id="contentFrame" src="about:blank" allow="autoplay; fullscreen" style="border: none;"></iframe>
+
+        <!-- Inactivity Confirmation Popup -->
+        <div id="inactivityPopup" class="hidden">
+            <div class="inactivity-card">
+                <p class="inactivity-question">¿Deseas continuar?</p>
+                <div class="inactivity-countdown-bar">
+                    <div id="inactivityCountdownFill" class="inactivity-countdown-fill"></div>
+                </div>
+                <button id="inactivityYesBtn">Sí, continuar</button>
+            </div>
+        </div>
     </div>
     <script type="module" src="/main.js"></script>
 </body>

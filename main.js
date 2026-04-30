@@ -649,14 +649,64 @@ function finalizePairing(deviceId, record) {
 // ─── Interaction Handler & Inactivity Timer ──────────────────────────────────────────────
 let interactionTimestamp = 0;
 let inactivityPoller = null;
-let iframeFocusPoller = null; // New poller for detecting iframe clicks
 const INACTIVITY_LIMIT_MS = 60000; // 60 seconds
+const POPUP_COUNTDOWN_MS  = 5000;  // 5 seconds for the user to respond
 
-// Create a focus sink to pull focus back from iframe
-const focusSink = document.createElement('button');
-focusSink.id = 'focusSink';
-focusSink.style.cssText = 'position:absolute; top:-1000px; left:-1000px; opacity:0; pointer-events:none;';
-document.body.appendChild(focusSink);
+// ─── Inactivity Popup ─────────────────────────────────────────────────────────
+const inactivityPopup  = document.getElementById('inactivityPopup');
+const inactivityYesBtn = document.getElementById('inactivityYesBtn');
+const countdownFill    = document.getElementById('inactivityCountdownFill');
+
+let popupCountdownTimer = null;  // setTimeout that fires if user ignores popup
+let popupVisible = false;
+
+function showInactivityPopup() {
+    if (popupVisible) return;
+    popupVisible = true;
+    console.log('[PWA-Timer] Showing inactivity popup.');
+
+    // Reset bar animation
+    countdownFill.style.transition = 'none';
+    countdownFill.style.transform  = 'scaleX(1)';
+    inactivityPopup.classList.remove('hidden');
+
+    // Force reflow so the transition starts from scaleX(1)
+    void countdownFill.offsetWidth;
+    countdownFill.style.transition = `transform ${POPUP_COUNTDOWN_MS}ms linear`;
+    countdownFill.style.transform  = 'scaleX(0)';
+
+    // If user ignores popup → return to video
+    popupCountdownTimer = setTimeout(() => {
+        hideInactivityPopup();
+        console.log('[PWA-Timer] Popup timeout. Returning to video.');
+        returnToVideo();
+    }, POPUP_COUNTDOWN_MS);
+}
+
+function hideInactivityPopup() {
+    popupVisible = false;
+    inactivityPopup.classList.add('hidden');
+    if (popupCountdownTimer) { clearTimeout(popupCountdownTimer); popupCountdownTimer = null; }
+}
+
+function returnToVideo() {
+    stopInactivityPoller();
+    // Use history.back() for clean navigation; failsafe via renderContent
+    history.back();
+    setTimeout(() => {
+        if (currentConfig && overlay.classList.contains('hidden')) {
+            renderContent(currentConfig);
+        }
+    }, 500);
+}
+
+// "Sí" button: reset the 60-second timer
+inactivityYesBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    console.log('[PWA-Timer] User confirmed. Resetting 60s timer.');
+    hideInactivityPopup();
+    markInteraction({ type: 'popup_yes' });
+});
 
 function markInteraction(event) {
     const now = Date.now();
@@ -670,10 +720,7 @@ function stopInactivityPoller() {
         clearInterval(inactivityPoller);
         inactivityPoller = null;
     }
-    if (iframeFocusPoller) {
-        clearInterval(iframeFocusPoller);
-        iframeFocusPoller = null;
-    }
+    hideInactivityPopup();
 }
 
 function startInactivityPoller() {
@@ -682,7 +729,7 @@ function startInactivityPoller() {
     console.log(`[PWA-Timer] ACTIVATING ${INACTIVITY_LIMIT_MS / 1000}s poller.`);
 
     inactivityPoller = setInterval(() => {
-        // Stop checking if we are no longer in an interactive state (iframe OR intermediate image)
+        // Stop checking if we are no longer in an interactive state
         const isInteractive = currentConfig && currentConfig.content_type === 'video_interactive' && overlay.classList.contains('hidden');
 
         if (!isInteractive) {
@@ -690,6 +737,9 @@ function startInactivityPoller() {
             stopInactivityPoller();
             return;
         }
+
+        // Don't advance timer while popup is visible (user is being asked)
+        if (popupVisible) return;
 
         const elapsedMs = Date.now() - interactionTimestamp;
         const remainingS = Math.max(0, Math.ceil((INACTIVITY_LIMIT_MS - elapsedMs) / 1000));
@@ -700,32 +750,12 @@ function startInactivityPoller() {
         }
 
         if (elapsedMs >= INACTIVITY_LIMIT_MS) {
-            console.log('[PWA-Timer] !!! LIMIT EXCEEDED !!! Returning to video.');
-            stopInactivityPoller();
-
-            // Cleanly simulate pressing "Back" to pop the history state and restore video
-            history.back();
-
-            // Failsafe direct render just in case history is broken
-            setTimeout(() => {
-                if (overlay.classList.contains('hidden')) {
-                    console.log('[PWA-Timer] Failsafe: history.back() might have failed, forcing renderContent.');
-                    renderContent(currentConfig);
-                }
-            }, 500);
+            console.log('[PWA-Timer] !!! LIMIT EXCEEDED !!! Showing confirmation popup.');
+            showInactivityPopup();
         }
     }, 1000);
-
-    // High frequency poller specifically for detecting when focus enters the iframe
-    iframeFocusPoller = setInterval(() => {
-        if (document.activeElement === iframe) {
-            console.log('[PWA-Timer] Iframe focus detected via poller. Resetting timer & pulling focus back.');
-            markInteraction({ type: 'iframe_poller' });
-
-            // Steal focus back to our invisible sink so that the next click can be detected again
-            focusSink.focus();
-        }
-    }, 250);
+    // NOTE: iframeFocusPoller removed — it was stealing focus from the iframe
+    // causing unnecessary reloads. Inactivity is now tracked via the 60s wall-clock only.
 }
 
 // Hook main window events to reset the timestamp and try to trigger fullscreen
@@ -739,12 +769,14 @@ function startInactivityPoller() {
 const handleInteraction = () => {
     activateFullscreen();
 
+    // Never navigate while the inactivity popup is showing
+    if (popupVisible) return;
+
     if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
     if (currentConfig.content_type !== 'video_interactive') return;
 
-    // If iframe is already open, just mark interaction
+    // If iframe is already open, do nothing — we no longer steal focus from it
     if (iframe.classList.contains('visible')) {
-        markInteraction({ type: 'handleInteraction_call' });
         return;
     }
 
