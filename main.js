@@ -1,5 +1,16 @@
 import PocketBase from 'pocketbase';
 
+// ─── Force Immersive Colors ASAP ─────────────────────────────────────────────
+(function() {
+    const themeMeta = document.querySelector('meta[name="theme-color"]') || document.createElement('meta');
+    themeMeta.name = "theme-color";
+    themeMeta.content = "#000000";
+    if (!themeMeta.parentNode) document.head.appendChild(themeMeta);
+    
+    document.documentElement.style.backgroundColor = "#000000";
+    document.body.style.backgroundColor = "#000000";
+})();
+
 // ─── Configuration ────────────────────────────────────────────────────────────
 const PB_URL = import.meta.env.VITE_PB_URL || 'https://firm-ordinary-metres-complex.trycloudflare.com/';
 const MEDIA_CACHE_NAME = 'pwa-media-v1';
@@ -7,38 +18,66 @@ const MEDIA_CACHE_NAME = 'pwa-media-v1';
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
-// ─── Register Service Worker ──────────────────────────────────────────────────
+// Service worker registration is handled automatically by Vite's PWA plugin
+// via the registerSW.js script injected in index.html.
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw-media.js')
-        .then(reg => console.log('[SW] Registered:', reg.scope))
-        .catch(err => console.warn('[SW] Registration failed:', err));
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        console.log('[PWA] New version detected. Reloading...');
+        window.location.reload();
+    });
 }
 
-// ─── DOM Elements ─────────────────────────────────────────────────────────────
-const app                = document.getElementById('app');
-const video              = document.getElementById('idleVideo');
-const image              = document.getElementById('displayImage');
-let iframe             = document.getElementById('contentFrame');
-const overlay            = document.getElementById('interactionOverlay');
-const loadingOverlay     = document.getElementById('loadingOverlay');
-const pairingOverlay     = document.getElementById('pairingOverlay');
+
+const app = document.getElementById('app');
+const video = document.getElementById('idleVideo');
+const image = document.getElementById('displayImage');
+let iframe = document.getElementById('contentFrame');
+const overlay = document.getElementById('interactionOverlay');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const pairingOverlay = document.getElementById('pairingOverlay');
 const pairingCodeDisplay = document.getElementById('pairingCodeDisplay');
-const interactiveImage   = document.getElementById('interactiveImage');
+const interactiveImage = document.getElementById('interactiveImage');
 
 // ─── App State ────────────────────────────────────────────────────────────────
-let currentConfig           = null;
-let playlistItems           = [];
+let currentConfig = null;
+let playlistItems = [];
 let currentPlaylistItemIndex = 0;
-let playlistTimeout         = null;
-let isLoadingContent        = false; // prevents concurrent content loads
+let playlistTimeout = null;
+let isLoadingContent = false; // prevents concurrent content loads
 
 // ─── DOM Helpers ──────────────────────────────────────────────────────────────
+// Fullscreen activation function
+async function activateFullscreen() {
+    try {
+        const docEl = document.documentElement;
+        const isCurrentlyFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        const heightGap = Math.abs(window.innerHeight - screen.height);
+        
+        // Only try to request if we detect a gap or not full
+        if (!isCurrentlyFull || heightGap > 10) {
+            const rfs = docEl.requestFullscreen || 
+                        docEl.webkitRequestFullscreen || 
+                        docEl.mozRequestFullScreen || 
+                        docEl.msRequestFullscreen;
+            if (rfs) await rfs.call(docEl);
+        }
+    } catch (err) {
+        // Silent fail - expected if not called from a user gesture
+    }
+}
+
+
 // Always recreate the iframe instead of changing .src to avoid polluting window.history
 function setIframeContent(url, htmlContent = null) {
     const newIframe = document.createElement('iframe');
     newIframe.id = 'contentFrame';
     newIframe.allow = "autoplay; fullscreen";
-    newIframe.frameBorder = "0";
+    newIframe.style.border = "0";
+    newIframe.style.outline = "none";
+    newIframe.style.backgroundColor = "#000000"; // Prevent white flash
     if (htmlContent !== null) {
         newIframe.srcdoc = htmlContent;
     } else {
@@ -52,7 +91,8 @@ function setIframeContent(url, htmlContent = null) {
 function showSync(msg = '⬇ Descargando...') {
     const el = document.getElementById('syncStatus');
     if (!el) return;
-    el.textContent = msg;
+    const span = el.querySelector('span');
+    if (span) span.textContent = msg;
     el.classList.remove('hidden');
     el.style.opacity = '1';
 }
@@ -69,13 +109,13 @@ function saveConfig(config) {
     try {
         const { _playlistItems, ...rest } = config;
         localStorage.setItem('pwa_last_config', JSON.stringify(rest));
-    } catch (e) {}
+    } catch (e) { }
 }
 function getSavedConfig() {
     try { return JSON.parse(localStorage.getItem('pwa_last_config')); } catch { return null; }
 }
 function savePlaylist(items) {
-    try { localStorage.setItem('pwa_last_playlist', JSON.stringify(items)); } catch (e) {}
+    try { localStorage.setItem('pwa_last_playlist', JSON.stringify(items)); } catch (e) { }
 }
 function getSavedPlaylist() {
     try { return JSON.parse(localStorage.getItem('pwa_last_playlist')); } catch { return null; }
@@ -123,7 +163,7 @@ async function resolveMediaUrl(url) {
         const cache = await caches.open(MEDIA_CACHE_NAME);
         const cached = await cache.match(url);
         if (cached) return url; // Service worker will intercept and serve from cache
-    } catch {}
+    } catch { }
     return url;
 }
 
@@ -150,12 +190,12 @@ async function fetchConfig(groupId) {
     // Determine active record (scheduled or base)
     const now = new Date();
     let activeRecord = null;
-    let baseRecord   = null;
+    let baseRecord = null;
 
     for (const record of records) {
         if (record.is_schedule && record.schedule_start && record.schedule_end) {
             const start = new Date(record.schedule_start);
-            const end   = new Date(record.schedule_end);
+            const end = new Date(record.schedule_end);
             if (now >= start && now <= end) { activeRecord = record; break; }
         } else if (!record.is_schedule && !baseRecord) {
             baseRecord = record;
@@ -269,12 +309,12 @@ function renderContent(config) {
 
     } else if (type === 'web_only' || type === 'url_only') {
         if (!config.redirect_url) return;
-        
+
         if (type === 'url_only') {
             const url = config.redirect_url.toLowerCase();
             const isVid = /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
             const isImg = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(url);
-            
+
             if (isVid) {
                 video.src = config.redirect_url;
                 video.loop = true;
@@ -287,13 +327,13 @@ function renderContent(config) {
                 return;
             }
         }
-        
+
         // Fallback for web_only or generic URL
         setIframeContent(config.redirect_url);
         iframe.classList.add('visible');
     } else if (type === 'html_only') {
         if (!config.image_full_url) return; // Note: image_full_url is used for media file URL
-        
+
         // Fetch HTML content to avoid "Content-Disposition: attachment" download
         fetch(config.image_full_url)
             .then(res => res.text())
@@ -308,7 +348,7 @@ function renderContent(config) {
 function renderPlaylistItem() {
     if (playlistItems.length === 0) { console.warn('[PWA] Playlist is empty.'); return; }
 
-    const item    = playlistItems[currentPlaylistItemIndex];
+    const item = playlistItems[currentPlaylistItemIndex];
     const isVideo = /\.(mp4|webm|ogg)(\?|$)/i.test(item.full_url);
 
     video.classList.add('hidden');
@@ -402,13 +442,13 @@ async function updateContentFromConfig(groupId) {
         // We NEVER want to auto-refresh and kill an active interactive session if the ID is the same.
         if (isSameConfig) {
             const updatedChanged = currentConfig.updated !== config.updated;
-            
+
             if (!updatedChanged || isUserInteracting) {
                 console.log('[PWA] Same config (or user interacting). Skipping render to preserve state.');
                 loadingOverlay.style.opacity = '0';
                 setTimeout(() => loadingOverlay.classList.add('hidden'), 400);
                 // Still update the global currentConfig to keep the latest 'updated' timestamp
-                currentConfig = config; 
+                currentConfig = config;
                 return;
             }
         }
@@ -454,7 +494,7 @@ function subscribeToDeviceChanges(deviceId) {
             handleUnpair();
         } else if (e.action === 'update' && e.record.is_registered) {
             const currentGroupId = localStorage.getItem('pwa_group_id');
-            const newGroupId     = e.record.group;
+            const newGroupId = e.record.group;
             if (newGroupId && newGroupId !== currentGroupId) {
                 handleGroupChange(newGroupId);
             }
@@ -470,7 +510,7 @@ function handleGroupChange(newGroupId) {
     localStorage.setItem('pwa_group_id', newGroupId);
     localStorage.removeItem('pwa_last_config');
     localStorage.removeItem('pwa_last_playlist');
-    try { pb.collection('pwa_config').unsubscribe(); } catch {}
+    try { pb.collection('pwa_config').unsubscribe(); } catch { }
     updateContentFromConfig(newGroupId).then(() => subscribeToConfigChanges(newGroupId));
 }
 
@@ -499,7 +539,7 @@ async function startContent(device) {
     }
 
     const deviceId = device.id;
-    let groupId    = device.group || localStorage.getItem('pwa_group_id');
+    let groupId = device.group || localStorage.getItem('pwa_group_id');
 
     if (!groupId) {
         console.warn('[PWA] No groupId found.');
@@ -601,7 +641,7 @@ function finalizePairing(deviceId, record) {
     console.log('[PWA] Pairing confirmed!');
     localStorage.setItem('pwa_device_id', deviceId);
     if (record.group) localStorage.setItem('pwa_group_id', record.group);
-    try { pb.collection('devices').unsubscribe(deviceId); } catch {}
+    try { pb.collection('devices').unsubscribe(deviceId); } catch { }
     startContent(record);
 }
 
@@ -609,14 +649,64 @@ function finalizePairing(deviceId, record) {
 // ─── Interaction Handler & Inactivity Timer ──────────────────────────────────────────────
 let interactionTimestamp = 0;
 let inactivityPoller = null;
-let iframeFocusPoller = null; // New poller for detecting iframe clicks
 const INACTIVITY_LIMIT_MS = 60000; // 60 seconds
+const POPUP_COUNTDOWN_MS  = 5000;  // 5 seconds for the user to respond
 
-// Create a focus sink to pull focus back from iframe
-const focusSink = document.createElement('button');
-focusSink.id = 'focusSink';
-focusSink.style.cssText = 'position:absolute; top:-1000px; left:-1000px; opacity:0; pointer-events:none;';
-document.body.appendChild(focusSink);
+// ─── Inactivity Popup ─────────────────────────────────────────────────────────
+const inactivityPopup  = document.getElementById('inactivityPopup');
+const inactivityYesBtn = document.getElementById('inactivityYesBtn');
+const countdownFill    = document.getElementById('inactivityCountdownFill');
+
+let popupCountdownTimer = null;  // setTimeout that fires if user ignores popup
+let popupVisible = false;
+
+function showInactivityPopup() {
+    if (popupVisible) return;
+    popupVisible = true;
+    console.log('[PWA-Timer] Showing inactivity popup.');
+
+    // Reset bar animation
+    countdownFill.style.transition = 'none';
+    countdownFill.style.transform  = 'scaleX(1)';
+    inactivityPopup.classList.remove('hidden');
+
+    // Force reflow so the transition starts from scaleX(1)
+    void countdownFill.offsetWidth;
+    countdownFill.style.transition = `transform ${POPUP_COUNTDOWN_MS}ms linear`;
+    countdownFill.style.transform  = 'scaleX(0)';
+
+    // If user ignores popup → return to video
+    popupCountdownTimer = setTimeout(() => {
+        hideInactivityPopup();
+        console.log('[PWA-Timer] Popup timeout. Returning to video.');
+        returnToVideo();
+    }, POPUP_COUNTDOWN_MS);
+}
+
+function hideInactivityPopup() {
+    popupVisible = false;
+    inactivityPopup.classList.add('hidden');
+    if (popupCountdownTimer) { clearTimeout(popupCountdownTimer); popupCountdownTimer = null; }
+}
+
+function returnToVideo() {
+    stopInactivityPoller();
+    // Use history.back() for clean navigation; failsafe via renderContent
+    history.back();
+    setTimeout(() => {
+        if (currentConfig && overlay.classList.contains('hidden')) {
+            renderContent(currentConfig);
+        }
+    }, 500);
+}
+
+// "Sí" button: reset the 60-second timer
+inactivityYesBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    console.log('[PWA-Timer] User confirmed. Resetting 60s timer.');
+    hideInactivityPopup();
+    markInteraction({ type: 'popup_yes' });
+});
 
 function markInteraction(event) {
     const now = Date.now();
@@ -630,76 +720,63 @@ function stopInactivityPoller() {
         clearInterval(inactivityPoller);
         inactivityPoller = null;
     }
-    if (iframeFocusPoller) {
-        clearInterval(iframeFocusPoller);
-        iframeFocusPoller = null;
-    }
+    hideInactivityPopup();
 }
 
 function startInactivityPoller() {
     stopInactivityPoller();
     interactionTimestamp = Date.now();
-    console.log(`[PWA-Timer] ACTIVATING ${INACTIVITY_LIMIT_MS/1000}s poller.`);
-    
+    console.log(`[PWA-Timer] ACTIVATING ${INACTIVITY_LIMIT_MS / 1000}s poller.`);
+
     inactivityPoller = setInterval(() => {
-        // Stop checking if we are no longer in an interactive state (iframe OR intermediate image)
+        // Stop checking if we are no longer in an interactive state
         const isInteractive = currentConfig && currentConfig.content_type === 'video_interactive' && overlay.classList.contains('hidden');
-        
+
         if (!isInteractive) {
             console.log('[PWA-Timer] Stopping poller: No longer in interactive state.');
             stopInactivityPoller();
             return;
         }
 
+        // Don't advance timer while popup is visible (user is being asked)
+        if (popupVisible) return;
+
         const elapsedMs = Date.now() - interactionTimestamp;
         const remainingS = Math.max(0, Math.ceil((INACTIVITY_LIMIT_MS - elapsedMs) / 1000));
-        
+
         // Log every 10 seconds or when below 10 seconds
         if (remainingS % 10 === 0 || remainingS <= 10) {
             console.log(`[PWA-Timer] Inactivity check: ${remainingS}s remaining.`);
         }
-        
+
         if (elapsedMs >= INACTIVITY_LIMIT_MS) {
-            console.log('[PWA-Timer] !!! LIMIT EXCEEDED !!! Returning to video.');
-            stopInactivityPoller();
-            
-            // Cleanly simulate pressing "Back" to pop the history state and restore video
-            history.back();
-            
-            // Failsafe direct render just in case history is broken
-            setTimeout(() => {
-                if (overlay.classList.contains('hidden')) {
-                    console.log('[PWA-Timer] Failsafe: history.back() might have failed, forcing renderContent.');
-                    renderContent(currentConfig);
-                }
-            }, 500); 
+            console.log('[PWA-Timer] !!! LIMIT EXCEEDED !!! Showing confirmation popup.');
+            showInactivityPopup();
         }
     }, 1000);
-
-    // High frequency poller specifically for detecting when focus enters the iframe
-    iframeFocusPoller = setInterval(() => {
-        if (document.activeElement === iframe) {
-            console.log('[PWA-Timer] Iframe focus detected via poller. Resetting timer & pulling focus back.');
-            markInteraction({ type: 'iframe_poller' });
-            
-            // Steal focus back to our invisible sink so that the next click can be detected again
-            focusSink.focus();
-        }
-    }, 250);
+    // NOTE: iframeFocusPoller removed — it was stealing focus from the iframe
+    // causing unnecessary reloads. Inactivity is now tracked via the 60s wall-clock only.
 }
 
-// Hook main window events to reset the timestamp
-['touchstart', 'click'].forEach(evt => {
-    window.addEventListener(evt, markInteraction, { passive: true, capture: true });
+// Hook main window events to reset the timestamp and try to trigger fullscreen
+['touchstart', 'click', 'mousemove', 'scroll'].forEach(evt => {
+    window.addEventListener(evt, () => {
+        markInteraction({ type: evt });
+        activateFullscreen();
+    }, { passive: true, capture: true });
 });
 
 const handleInteraction = () => {
+    activateFullscreen();
+
+    // Never navigate while the inactivity popup is showing
+    if (popupVisible) return;
+
     if (!currentConfig || !pairingOverlay.classList.contains('hidden')) return;
     if (currentConfig.content_type !== 'video_interactive') return;
-    
-    // If iframe is already open, just mark interaction
+
+    // If iframe is already open, do nothing — we no longer steal focus from it
     if (iframe.classList.contains('visible')) {
-        markInteraction({ type: 'handleInteraction_call' });
         return;
     }
 
@@ -714,11 +791,11 @@ const handleInteraction = () => {
             video.classList.add('hidden');
             overlay.classList.add('hidden');
             video.pause();
-            
+
             // Start the poller now as we are in interactive mode (intermediate image)
             startInactivityPoller();
             return;
-        } 
+        }
         // If no image, fallthrough to Step 2 (open iframe directly)
     }
 
@@ -728,14 +805,14 @@ const handleInteraction = () => {
 
     setIframeContent(currentConfig.redirect_url);
     iframe.classList.add('visible');
-    
+
     // Hide everything else
     video.classList.add('hidden');
     interactiveImage.classList.add('hidden');
     overlay.classList.add('hidden');
     video.pause();
     if (playlistTimeout) { clearTimeout(playlistTimeout); playlistTimeout = null; }
-    
+
     startInactivityPoller();
 };
 
@@ -743,13 +820,13 @@ const handleInteraction = () => {
 window.addEventListener('popstate', (event) => {
     console.log('[PWA] Back navigation detected.');
     stopInactivityPoller();
-    
+
     // Simple logic: if anyone pressed back, we check what needs to be shown based on state
     // But since we use simple rendering, we just call renderContent which resets everything to idle
     // unless the state tells us otherwise.
-    
+
     const state = event.state || {};
-    
+
     if (state.stage === 'image') {
         // Return to the image state
         stopCurrentContent();
@@ -763,12 +840,14 @@ window.addEventListener('popstate', (event) => {
 });
 
 app.addEventListener('click', handleInteraction);
-app.addEventListener('touchstart', handleInteraction, { passive: true });
+// The 'touchstart' listener was causing double-firing (touchstart then click),
+// making it skip the image state instantly when the user released their finger.
+// Relying only on 'click' works for both mouse and touch without duplication.
 
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 async function checkDevicePairing() {
     const deviceId = localStorage.getItem('pwa_device_id');
-    const groupId  = localStorage.getItem('pwa_group_id');
+    const groupId = localStorage.getItem('pwa_group_id');
 
     // No device ID → start pairing flow
     if (!deviceId) {

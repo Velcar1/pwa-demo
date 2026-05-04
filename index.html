@@ -3,11 +3,16 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>PWA Motorola</title>
+
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <meta name="theme-color" content="#ffffff">
+    <meta name="background-color" content="#ffffff">
+    <meta name="color-scheme" content="light">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="/style.css">
 </head>
@@ -36,6 +41,7 @@
                     <div class="spinner-small"></div>
                     <p>Esperando autorización...</p>
                 </div>
+                <div class="version-tag">v1.2</div>
             </div>
         </div>
 
@@ -46,47 +52,19 @@
         <img id="displayImage" class="hidden" alt="Contenido">
         <img id="interactiveImage" class="hidden" alt="Imagen Interactiva">
         <div id="interactionOverlay"></div>
-        <iframe id="contentFrame" src="about:blank" allow="autoplay; fullscreen" frameborder="0"></iframe>
-    </div>
-    <!-- Critical Polyfills for Chrome 56 / Tizen 4.0 (must run FIRST) -->
-    <script>
-        // globalThis polyfill (Chrome 56 doesn't have it - PocketBase SDK requires it)
-        (function() {
-            if (typeof globalThis === 'undefined') {
-                Object.defineProperty(Object.prototype, '__globalThis__', {
-                    get: function() { return this; },
-                    configurable: true
-                });
-                globalThis = __globalThis__;
-                delete Object.prototype.__globalThis__;
-            }
-        })();
-        // Promise.allSettled polyfill (not in Chrome 56)
-        if (!Promise.allSettled) {
-            Promise.allSettled = function(promises) {
-                return Promise.all(promises.map(function(p) {
-                    return Promise.resolve(p).then(function(value) {
-                        return { status: 'fulfilled', value: value };
-                    }, function(reason) {
-                        return { status: 'rejected', reason: reason };
-                    });
-                }));
-            };
-        }
-        // Object.fromEntries polyfill (not in Chrome 56)
-        if (!Object.fromEntries) {
-            Object.fromEntries = function(iterable) {
-                return Array.from(iterable).reduce(function(obj, ref) {
-                    var key = ref[0]; var val = ref[1];
-                    obj[key] = val;
-                    return obj;
-                }, {});
-            };
-        }
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/abortcontroller-polyfill@1.7.5/dist/umd-polyfill.min.js"></script>
+        <iframe id="contentFrame" src="about:blank" allow="autoplay; fullscreen" style="border: none;"></iframe>
 
-    <!-- Samsung Smart Signage / Tizen APIs are loaded dynamically in main.js ONLY on Samsung hardware -->
+        <!-- Inactivity Confirmation Popup -->
+        <div id="inactivityPopup" class="hidden">
+            <div class="inactivity-card">
+                <p class="inactivity-question">¿Deseas continuar?</p>
+                <div class="inactivity-countdown-bar">
+                    <div id="inactivityCountdownFill" class="inactivity-countdown-fill"></div>
+                </div>
+                <button id="inactivityYesBtn">Sí, continuar</button>
+            </div>
+        </div>
+    </div>
     <script type="module" src="/main.js"></script>
 </body>
 
