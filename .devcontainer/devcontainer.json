@@ -1,0 +1,23 @@
+{
+	"name": "PWA Motorola - Dev Container",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/common-utils:2": {}
+	},
+	"forwardPorts": [5173],
+	"postCreateCommand": "npm install",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"dbaeumer.vscode-eslint",
+				"esbenp.prettier-vscode",
+				"christian-kohler.path-intellisense",
+				"formulahendry.auto-rename-tag",
+				"ms-vscode.live-server"
+			]
+		}
+	},
+	"remoteUser": "root"
+}
